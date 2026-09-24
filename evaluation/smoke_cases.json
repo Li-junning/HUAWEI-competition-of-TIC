@@ -1,0 +1,76 @@
+[
+  {
+    "case_id": "credible_direct_source",
+    "description": "单一直接原始来源可以满足充分证据门槛",
+    "input_text": "测试机构于2024年发布了年度报告。",
+    "expected": {
+      "label": "credible",
+      "score_visible": true
+    }
+  },
+  {
+    "case_id": "incorrect_year",
+    "description": "实体一致但年份被原始来源直接反驳",
+    "input_text": "测试政策于2022年生效。",
+    "expected": {
+      "label": "incorrect",
+      "preserve_refuting_excerpt": true
+    }
+  },
+  {
+    "case_id": "reprint_cluster",
+    "description": "同一公告的多次转载只形成一个独立证据簇",
+    "input_text": "测试项目覆盖了80%的人群。",
+    "expected": {
+      "independent_cluster_count": 1
+    }
+  },
+  {
+    "case_id": "opinion_not_applicable",
+    "description": "价值判断不参与真伪评分",
+    "input_text": "这个方案是世界上最优雅的方案。",
+    "expected": {
+      "label": "not_applicable",
+      "support_score": null
+    }
+  },
+  {
+    "case_id": "paper_exists_claim_unsupported",
+    "description": "论文存在性与论文是否支持原结论分开",
+    "input_text": "某论文证明该方法在所有任务上都提高了50%。",
+    "expected": {
+      "existence_status": "found",
+      "claim_support_status": "evidence_insufficient"
+    }
+  },
+  {
+    "case_id": "page_unavailable",
+    "description": "来源不可访问不是反证",
+    "input_text": "测试页面声称该产品已发布。",
+    "expected": {
+      "label": "evidence_insufficient",
+      "support_score": null
+    }
+  },
+  {
+    "case_id": "provider_partial_failure",
+    "description": "单个 provider 失败不能让任务静默满分",
+    "input_text": "第一条可核验。第二条也可核验。",
+    "expected": {
+      "task_status": "partial",
+      "score": null,
+      "failed_providers_visible": true
+    }
+  },
+  {
+    "case_id": "claim_limit_truncation",
+    "description": "超过15条时显示尚未核验数量",
+    "input_text": "这是包含超过十五个独立事实的长文本夹具。",
+    "expected": {
+      "claim_limit": 15,
+      "truncated": true,
+      "claims_unchecked_min": 1,
+      "score": null
+    }
+  }
+]
