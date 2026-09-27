@@ -109,6 +109,17 @@ export interface ClaimPage {
   limit: number
 }
 
+export interface ReviewEvent {
+  event_id: string
+  action: 'add' | 'split' | 'merge' | 'edit' | 'delete'
+  reviewer: string
+  created_at: string
+  before_text: string
+  after_text: string
+  undone_at: string | null
+  undone_by: string | null
+}
+
 export interface ApiErrorBody {
   error?: {
     code?: string

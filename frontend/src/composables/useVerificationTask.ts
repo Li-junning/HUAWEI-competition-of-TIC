@@ -1,6 +1,6 @@
 import { computed, onScopeDispose, ref } from 'vue'
-import { ApiError, createTask, deleteClaim as deleteClaimRequest, editClaim as editClaimRequest, getClaimDetail, getClaims, getTask, retryClaim } from '../api/client'
-import type { ClaimDetail, ClaimListItem, TaskStatus, TaskSummary } from '../types/api'
+import { ApiError, addClaim as addClaimRequest, createTask, deleteClaim as deleteClaimRequest, editClaim as editClaimRequest, getClaimDetail, getClaims, getReviewHistory, getTask, mergeClaims as mergeClaimsRequest, retryClaim, splitClaim as splitClaimRequest, undoReview as undoReviewRequest } from '../api/client'
+import type { ClaimDetail, ClaimListItem, ReviewEvent, TaskStatus, TaskSummary } from '../types/api'
 import { downloadReport } from '../utils/export'
 
 export const MAX_INPUT_LENGTH = 20_000
@@ -18,6 +18,8 @@ export function useVerificationTask() {
   const activeDetail = ref<string | null>(null)
   const retryingClaim = ref<string | null>(null)
   const removingClaim = ref<string | null>(null)
+  const reviewBusy = ref(false)
+  const reviewHistory = ref<ReviewEvent[]>([])
   const errorMessage = ref<string | null>(null)
   const formError = ref<string | null>(null)
   const phase = ref<'input' | 'processing' | 'report'>('input')
@@ -106,6 +108,7 @@ export function useVerificationTask() {
     detailTokens.clear()
     claimSignatures.clear()
     retryingClaim.value = null
+    reviewHistory.value = []
   }
 
   async function poll(id: string, generation: number): Promise<void> {
@@ -125,6 +128,7 @@ export function useVerificationTask() {
         if (isTerminal(current.status)) {
           setPolling(false)
           phase.value = 'report'
+          void loadReviewHistory(id)
           return
         }
       } catch (error: unknown) {
@@ -235,36 +239,65 @@ export function useVerificationTask() {
   }
 
   async function refreshAfterReviewChange(id: string, generation: number): Promise<void> {
-    const [current, page] = await Promise.all([getTask(id), getClaims(id)])
+    const [current, page, history] = await Promise.all([getTask(id), getClaims(id), getReviewHistory(id)])
     if (!isTaskCurrent(id, generation)) return
     task.value = current
     claims.value = page.items
+    reviewHistory.value = history.items
     details.value = {}
     claimSignatures.clear()
     for (const item of page.items) claimSignatures.set(item.claim_id, JSON.stringify([item.state, item.evidence_cluster_ids]))
   }
 
-  async function editClaimText(claimId: string, normalizedClaim: string): Promise<void> {
-    const id = taskId.value
-    if (!id || !normalizedClaim.trim() || task.value?.status === 'running' || task.value?.status === 'created') return
-    const generation = pollGeneration
+  async function loadReviewHistory(id: string): Promise<void> {
     try {
-      await editClaimRequest(claimId, normalizedClaim.trim())
-      await refreshAfterReviewChange(id, generation)
-      if (isTaskCurrent(id, generation)) await loadDetail(claimId)
-    } catch (error: unknown) { errorMessage.value = explainError(error) }
+      const history = await getReviewHistory(id)
+      if (id === taskId.value) reviewHistory.value = history.items
+    } catch (error: unknown) { if (id === taskId.value) errorMessage.value = explainError(error) }
   }
 
-  async function removeClaim(claimId: string): Promise<void> {
+  async function runReview(operation: (id: string) => Promise<unknown>): Promise<boolean> {
     const id = taskId.value
-    if (!id || removingClaim.value || task.value?.status === 'running' || task.value?.status === 'created') return
+    if (!id || reviewBusy.value || task.value?.status === 'running' || task.value?.status === 'created') return false
     const generation = pollGeneration
-    removingClaim.value = claimId
+    reviewBusy.value = true
+    errorMessage.value = null
     try {
-      await deleteClaimRequest(claimId)
+      await operation(id)
       await refreshAfterReviewChange(id, generation)
-    } catch (error: unknown) { errorMessage.value = explainError(error) }
+      return isTaskCurrent(id, generation)
+    } catch (error: unknown) { errorMessage.value = explainError(error); return false }
+    finally { reviewBusy.value = false }
+  }
+
+  async function editClaimText(claimId: string, normalizedClaim: string, reviewer: string): Promise<void> {
+    if (!normalizedClaim.trim()) return
+    const changed = await runReview(() => editClaimRequest(claimId, normalizedClaim.trim(), reviewer))
+    if (changed && taskId.value) await loadDetail(claimId)
+  }
+
+  async function removeClaim(claimId: string, reviewer: string): Promise<void> {
+    const id = taskId.value
+    if (!id || removingClaim.value) return
+    removingClaim.value = claimId
+    try { await runReview(() => deleteClaimRequest(claimId, reviewer)) }
     finally { if (removingClaim.value === claimId) removingClaim.value = null }
+  }
+
+  async function addManualClaim(start: number, end: number, wording: string, reviewer: string): Promise<boolean> {
+    return runReview(id => addClaimRequest(id, start, end, wording, reviewer))
+  }
+
+  async function splitManualClaim(claimId: string, offset: number, first: string, second: string, reviewer: string): Promise<boolean> {
+    return runReview(() => splitClaimRequest(claimId, offset, first, second, reviewer))
+  }
+
+  async function mergeManualClaims(ids: string[], wording: string, reviewer: string): Promise<boolean> {
+    return runReview(id => mergeClaimsRequest(id, ids, wording, reviewer))
+  }
+
+  async function undoReviewEvent(eventId: string, reviewer: string): Promise<boolean> {
+    return runReview(id => undoReviewRequest(id, eventId, reviewer))
   }
 
   async function resumePolling(): Promise<void> {
@@ -291,7 +324,7 @@ export function useVerificationTask() {
       task.value = current
       await refreshClaims(id, generation)
       if (generation !== pollGeneration || id !== taskId.value) return
-      if (isTerminal(current.status)) phase.value = 'report'
+      if (isTerminal(current.status)) { phase.value = 'report'; void loadReviewHistory(id) }
       else {
         phase.value = 'processing'
         pollStartedAt = Date.now()
@@ -317,6 +350,7 @@ export function useVerificationTask() {
     detailTokens.clear()
     claimSignatures.clear()
     retryingClaim.value = null
+    reviewHistory.value = []
     errorMessage.value = null
     formError.value = null
     phase.value = 'input'
@@ -325,7 +359,8 @@ export function useVerificationTask() {
   onScopeDispose(() => { setPolling(false); pollGeneration += 1 })
 
   return {
-    text, taskId, task, claims, details, activeDetail, retryingClaim, removingClaim, errorMessage, formError,
-    phase, canExport, canRefresh, submit, exportReport, stopPolling, resumePolling, loadDetail, retry, editClaimText, removeClaim, restoreTask, startOver,
+    text, taskId, task, claims, details, activeDetail, retryingClaim, removingClaim, reviewBusy, reviewHistory, errorMessage, formError,
+    phase, canExport, canRefresh, submit, exportReport, stopPolling, resumePolling, loadDetail, retry, editClaimText, removeClaim,
+    addManualClaim, splitManualClaim, mergeManualClaims, undoReviewEvent, restoreTask, startOver,
   }
 }

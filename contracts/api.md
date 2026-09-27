@@ -112,7 +112,19 @@ EvidenceRelation = supports | refutes | partially_supports | irrelevant | unknow
 
 ## 人工复核声明
 
-任务结束后，`PATCH /api/claims/{claim_id}` 可修改 `normalized_claim`（1–2000 字符）。`source_text`、原文 UTF-16 区间和任务原文不变；为避免旧证据支持修改后的文字，服务会清空标签、分数、查询和证据，并把声明标记为 `unchecked`。返回项会带 `manually_edited: true`。用户可从声明详情重新检索修改后的文字；在该修改尚未重查时允许一次显式重试，重试使用现有任务/provider 调用预算。获得新结论后会遵循常规重试限制。`DELETE /api/claims/{claim_id}` 会从任务列表、摘要计数和后续导出中移除此声明，但不会改写原文或其他声明。任务处理中两种操作均返回 `409 TASK_BUSY`。
+任务结束后，`PATCH /api/claims/{claim_id}` 可修改 `normalized_claim`（1–2000 字符），请求体也可传 `reviewer`（审核人署名，最多 40 字符）。`source_text`、原文 UTF-16 区间和任务原文不变；为避免旧证据支持修改后的文字，服务会清空标签、分数、查询和证据，并把声明标记为 `unchecked`。返回项会带 `manually_edited: true`。用户可从声明详情重新检索修改后的文字；在该修改尚未重查时允许一次显式重试，重试使用现有任务/provider 调用预算。获得新结论后会遵循常规重试限制。`DELETE /api/claims/{claim_id}?reviewer=姓名` 会从任务列表、摘要计数和后续导出中移除此声明，但不会改写原文或其他声明。
+
+人工调整断句使用以下接口。每次操作都记录在任务的操作历史中；调整涉及的声明会清除旧判断并标记为 `unchecked`，需要再次检索。位置使用 JavaScript UTF-16 半开区间，服务端从已保存原文提取片段，拒绝越界、切断代理对或与现有声明重叠。补充和拆分仍受任务 `claim_limit` 约束。
+
+| 接口 | 请求体主要字段 | 效果 |
+| --- | --- | --- |
+| `POST /api/tasks/{task_id}/claims` | `char_start`, `char_end`, `normalized_claim`, `reviewer` | 补充遗漏声明 |
+| `POST /api/claims/{claim_id}/split` | `split_at`, `first_claim`, `second_claim`, `reviewer` | 在原文指定位置拆成两条 |
+| `POST /api/tasks/{task_id}/claims/merge` | `claim_ids`（相邻两条）, `normalized_claim`, `reviewer` | 合并成一条 |
+| `GET /api/tasks/{task_id}/review-history` | 无 | 按时间倒序返回操作类型、署名、时间、修改前后文字和撤销状态 |
+| `POST /api/tasks/{task_id}/review-history/{event_id}/undo` | `reviewer` | 按相反顺序撤销最近一次尚未撤销的操作 |
+
+撤销会恢复该操作前的声明及判断。若之后发生重新检索等状态变化，为避免覆盖新证据，返回 `409 STATE_CHANGED`。其他可能的冲突包括 `TASK_BUSY`、`INVALID_RANGE`、`CLAIM_LIMIT`、`UNDO_ORDER`。审核人署名由操作人输入，当前版本没有身份认证。
 
 ## 重试
 

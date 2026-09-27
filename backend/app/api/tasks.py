@@ -7,7 +7,8 @@ from fastapi.responses import PlainTextResponse
 
 from ..export import to_json, to_markdown
 from ..pipeline import Pipeline
-from ..schemas import ClaimListResponse, CreateTaskRequest, CreateTaskResponse, EditClaimRequest, TaskStatus
+from ..schemas import (AddClaimRequest, ClaimListResponse, CreateTaskRequest, CreateTaskResponse,
+                       EditClaimRequest, MergeClaimsRequest, SplitClaimRequest, TaskStatus, UndoReviewRequest)
 from .dependencies import PipelineDependency
 from .errors import safe_error
 
@@ -68,22 +69,87 @@ async def get_claim(claim_id: str, pipeline: PipelineDependency):
 
 @router.patch("/claims/{claim_id}")
 async def edit_claim(claim_id: str, request: EditClaimRequest, pipeline: PipelineDependency):
-    claim, error = pipeline.storage.edit_claim(claim_id, request.normalized_claim)
-    if error == "NOT_FOUND":
+    existing = pipeline.storage.get_claim(claim_id)
+    if existing is None:
         raise HTTPException(status_code=404, detail="声明不存在")
-    if error == "TASK_BUSY":
-        return safe_error("TASK_BUSY", "任务处理中，暂不能修改声明", 409)
-    return claim
+    claims, error = pipeline.storage.review_change(existing.task_id, "edit", request.reviewer,
+                                                    claim_ids=[claim_id], texts=[request.normalized_claim])
+    if failure := _review_error(error):
+        return failure
+    return claims[0]
 
 
 @router.delete("/claims/{claim_id}", status_code=204)
-async def delete_claim(claim_id: str, pipeline: PipelineDependency):
-    deleted, error = pipeline.storage.delete_claim(claim_id)
-    if error == "NOT_FOUND":
+async def delete_claim(claim_id: str, pipeline: PipelineDependency, reviewer: str = Query("未署名", min_length=1, max_length=40)):
+    existing = pipeline.storage.get_claim(claim_id)
+    if existing is None:
         raise HTTPException(status_code=404, detail="声明不存在")
-    if error == "TASK_BUSY":
-        return safe_error("TASK_BUSY", "任务处理中，暂不能删除声明", 409)
+    _, error = pipeline.storage.review_change(existing.task_id, "delete", reviewer, claim_ids=[claim_id])
+    if failure := _review_error(error):
+        return failure
     return Response(status_code=204)
+
+
+def _review_error(error: str | None) -> Response | None:
+    if error is None:
+        return
+    if error == "NOT_FOUND":
+        raise HTTPException(status_code=404, detail="任务或声明不存在")
+    messages = {
+        "TASK_BUSY": "任务处理中，暂不能调整声明",
+        "INVALID_RANGE": "所选原文范围无效、与其他声明重叠，或两条声明不相邻",
+        "INVALID_REVIEW": "人工复核内容不完整",
+        "CLAIM_LIMIT": "声明数量已达到本任务上限",
+        "UNDO_ORDER": "请从最近一次未撤销的操作开始撤销",
+        "STATE_CHANGED": "声明在该操作后发生了变化，无法安全撤销",
+    }
+    return safe_error(error, messages.get(error, "操作失败"), 409)
+
+
+@router.post("/tasks/{task_id}/claims")
+async def add_claim(task_id: str, request: AddClaimRequest, pipeline: PipelineDependency):
+    claims, error = pipeline.storage.review_change(task_id, "add", request.reviewer,
+        char_start=request.char_start, char_end=request.char_end, texts=[request.normalized_claim])
+    if failure := _review_error(error):
+        return failure
+    return claims[0]
+
+
+@router.post("/claims/{claim_id}/split")
+async def split_claim(claim_id: str, request: SplitClaimRequest, pipeline: PipelineDependency):
+    existing = pipeline.storage.get_claim(claim_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail="声明不存在")
+    claims, error = pipeline.storage.review_change(existing.task_id, "split", request.reviewer,
+        claim_ids=[claim_id], split_at=request.split_at, texts=[request.first_claim, request.second_claim])
+    if failure := _review_error(error):
+        return failure
+    return claims
+
+
+@router.post("/tasks/{task_id}/claims/merge")
+async def merge_claims(task_id: str, request: MergeClaimsRequest, pipeline: PipelineDependency):
+    claims, error = pipeline.storage.review_change(task_id, "merge", request.reviewer,
+        claim_ids=request.claim_ids, texts=[request.normalized_claim])
+    if failure := _review_error(error):
+        return failure
+    return claims[0]
+
+
+@router.get("/tasks/{task_id}/review-history")
+async def review_history(task_id: str, pipeline: PipelineDependency):
+    events = pipeline.storage.list_review_events(task_id)
+    if events is None:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    return {"items": events}
+
+
+@router.post("/tasks/{task_id}/review-history/{event_id}/undo")
+async def undo_review(task_id: str, event_id: str, request: UndoReviewRequest, pipeline: PipelineDependency):
+    error = pipeline.storage.undo_review_event(task_id, event_id, request.reviewer)
+    if failure := _review_error(error):
+        return failure
+    return {"undone": True}
 
 
 @router.post("/claims/{claim_id}/retry", status_code=202)

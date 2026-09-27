@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from .reference_resolution import has_unresolved_reference
-from .schemas import Claim, ClaimState, TaskStatus, TaskSummary, now_utc
+from .schemas import Claim, ClaimState, TaskStatus, TaskSummary, new_id, now_utc
 
 
 class Storage:
@@ -38,6 +38,14 @@ class Storage:
               data TEXT NOT NULL, state TEXT NOT NULL, retry_count INTEGER NOT NULL DEFAULT 0
             );
             CREATE INDEX IF NOT EXISTS idx_claims_task ON claims(task_id);
+            CREATE TABLE IF NOT EXISTS review_events (
+              event_id TEXT PRIMARY KEY, task_id TEXT NOT NULL REFERENCES tasks(task_id),
+              action TEXT NOT NULL, reviewer TEXT NOT NULL, created_at TEXT NOT NULL,
+              before_claims TEXT NOT NULL, after_claims TEXT NOT NULL,
+              before_text TEXT NOT NULL, after_text TEXT NOT NULL,
+              undone_at TEXT, undone_by TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_review_events_task ON review_events(task_id, created_at);
                 """
             )
             columns = {row[1] for row in self.conn.execute("PRAGMA table_info(tasks)").fetchall()}
@@ -203,6 +211,183 @@ class Storage:
                                      (task_id, limit, offset)).fetchall()
             total = self.conn.execute("SELECT COUNT(*) FROM claims WHERE task_id = ?", (task_id,)).fetchone()[0]
         return [Claim.model_validate_json(row[0]) for row in rows], int(total)
+
+    def review_change(self, task_id: str, action: str, reviewer: str, *,
+                      claim_ids: list[str] | None = None, char_start: int | None = None,
+                      char_end: int | None = None, split_at: int | None = None,
+                      texts: list[str] | None = None) -> tuple[list[Claim] | None, str | None]:
+        """Apply one manual change and save a reversible snapshot atomically."""
+        reviewer = reviewer.strip()
+        texts = [value.strip() for value in (texts or [])]
+        claim_ids = claim_ids or []
+        if not reviewer or any(not value for value in texts):
+            return None, "INVALID_REVIEW"
+        with self._lock:
+            self.conn.execute("BEGIN IMMEDIATE")
+            try:
+                task = self.conn.execute("SELECT * FROM tasks WHERE task_id=?", (task_id,)).fetchone()
+                if task is None:
+                    return self._finish_review(None, "NOT_FOUND")
+                if task["status"] in {TaskStatus.CREATED.value, TaskStatus.RUNNING.value}:
+                    return self._finish_review(None, "TASK_BUSY")
+                rows = self.conn.execute("SELECT data FROM claims WHERE task_id=? ORDER BY rowid", (task_id,)).fetchall()
+                before = [Claim.model_validate_json(row["data"]) for row in rows]
+                claims = [claim.model_copy(deep=True) for claim in before]
+                by_id = {claim.claim_id: claim for claim in claims}
+                if any(claim_id not in by_id for claim_id in claim_ids):
+                    return self._finish_review(None, "NOT_FOUND")
+                original = task["input_text"]
+
+                def source_slice(start: int, end: int) -> str | None:
+                    raw = original.encode("utf-16-le")
+                    if start < 0 or end <= start or end * 2 > len(raw):
+                        return None
+                    try:
+                        value = raw[start * 2:end * 2].decode("utf-16-le")
+                    except UnicodeDecodeError:
+                        return None
+                    return value if value.strip() else None
+
+                def unchecked(claim: Claim, wording: str) -> None:
+                    claim.normalized_claim = wording
+                    claim.manually_edited = True
+                    claim.label = None
+                    claim.support_score = None
+                    claim.reason = "人工调整了声明，尚无对应的新证据判断。"
+                    claim.state = ClaimState.UNCHECKED
+                    claim.retry_count = 0
+                    claim.type = "general"
+                    claim.entities = []
+                    claim.conditions = []
+                    claim.queries = []
+                    claim.evidence_clusters = []
+                    claim.evidence_cluster_ids = []
+                    claim.paper_check = None
+
+                if action == "edit" and len(claim_ids) == 1 and len(texts) == 1:
+                    unchecked(by_id[claim_ids[0]], texts[0])
+                    result_ids = claim_ids
+                elif action == "delete" and len(claim_ids) == 1:
+                    claims = [claim for claim in claims if claim.claim_id != claim_ids[0]]
+                    result_ids = []
+                elif action == "add" and len(texts) == 1 and char_start is not None and char_end is not None:
+                    source = source_slice(char_start, char_end)
+                    if source is None or any(char_start < claim.char_end and claim.char_start < char_end for claim in claims):
+                        return self._finish_review(None, "INVALID_RANGE")
+                    claim = Claim(claim_id=new_id("c"), task_id=task_id, source_text=source,
+                                  char_start=char_start, char_end=char_end, normalized_claim=texts[0])
+                    unchecked(claim, texts[0])
+                    claims.append(claim)
+                    result_ids = [claim.claim_id]
+                elif action == "split" and len(claim_ids) == 1 and len(texts) == 2 and split_at is not None:
+                    original_claim = by_id[claim_ids[0]]
+                    if not original_claim.char_start < split_at < original_claim.char_end:
+                        return self._finish_review(None, "INVALID_RANGE")
+                    left = source_slice(original_claim.char_start, split_at)
+                    right = source_slice(split_at, original_claim.char_end)
+                    if left is None or right is None:
+                        return self._finish_review(None, "INVALID_RANGE")
+                    original_end = original_claim.char_end
+                    original_claim.source_text = left
+                    original_claim.char_end = split_at
+                    unchecked(original_claim, texts[0])
+                    second = Claim(claim_id=new_id("c"), task_id=task_id, source_text=right,
+                                   char_start=split_at, char_end=original_end,
+                                   normalized_claim=texts[1])
+                    unchecked(second, texts[1])
+                    claims.append(second)
+                    result_ids = [original_claim.claim_id, second.claim_id]
+                elif action == "merge" and len(claim_ids) == 2 and len(texts) == 1 and claim_ids[0] != claim_ids[1]:
+                    ordered = sorted(claims, key=lambda claim: (claim.char_start, claim.char_end))
+                    first, second = sorted((by_id[claim_ids[0]], by_id[claim_ids[1]]), key=lambda claim: claim.char_start)
+                    if ordered.index(second) != ordered.index(first) + 1 or first.char_end > second.char_start:
+                        return self._finish_review(None, "INVALID_RANGE")
+                    source = source_slice(first.char_start, second.char_end)
+                    if source is None:
+                        return self._finish_review(None, "INVALID_RANGE")
+                    first.source_text = source
+                    first.char_end = second.char_end
+                    unchecked(first, texts[0])
+                    claims = [claim for claim in claims if claim.claim_id != second.claim_id]
+                    result_ids = [first.claim_id]
+                else:
+                    return self._finish_review(None, "INVALID_REVIEW")
+                if len(claims) > task["claim_limit"]:
+                    return self._finish_review(None, "CLAIM_LIMIT")
+                claims.sort(key=lambda claim: (claim.char_start, claim.char_end))
+                before_json = json.dumps([claim.model_dump(mode="json") for claim in before], ensure_ascii=False)
+                after_json = json.dumps([claim.model_dump(mode="json") for claim in claims], ensure_ascii=False)
+                def descriptions(items: list[Claim], ids: list[str]) -> str:
+                    return "；".join(claim.normalized_claim for claim in items if claim.claim_id in ids)[:4000]
+                before_text = descriptions(before, claim_ids)
+                after_text = descriptions(claims, result_ids)
+                self.conn.execute("DELETE FROM claims WHERE task_id=?", (task_id,))
+                for claim in claims:
+                    self.conn.execute("INSERT INTO claims(claim_id,task_id,data,state,retry_count) VALUES(?,?,?,?,?)",
+                                      (claim.claim_id, task_id, claim.model_dump_json(), claim.state.value, claim.retry_count))
+                timestamp = now_utc().isoformat()
+                self.conn.execute("UPDATE tasks SET updated_at=? WHERE task_id=?", (timestamp, task_id))
+                self.conn.execute("INSERT INTO review_events(event_id,task_id,action,reviewer,created_at,before_claims,after_claims,before_text,after_text) VALUES(?,?,?,?,?,?,?,?,?)",
+                                  (new_id("r"), task_id, action, reviewer, timestamp, before_json, after_json, before_text, after_text))
+                return self._finish_review([claim for claim in claims if claim.claim_id in result_ids], None)
+            except BaseException:
+                self.conn.rollback()
+                raise
+
+    def _finish_review(self, claims: list[Claim] | None, error: str | None) -> tuple[list[Claim] | None, str | None]:
+        if error:
+            self.conn.rollback()
+        else:
+            self.conn.commit()
+        return claims, error
+
+    def list_review_events(self, task_id: str) -> list[dict[str, Any]] | None:
+        with self._lock:
+            if self.conn.execute("SELECT 1 FROM tasks WHERE task_id=?", (task_id,)).fetchone() is None:
+                return None
+            rows = self.conn.execute("SELECT event_id, action, reviewer, created_at, before_text, after_text, undone_at, undone_by FROM review_events WHERE task_id=? ORDER BY rowid DESC", (task_id,)).fetchall()
+        return [dict(row) for row in rows]
+
+    def undo_review_event(self, task_id: str, event_id: str, reviewer: str) -> str | None:
+        if not reviewer.strip():
+            return "INVALID_REVIEW"
+        with self._lock:
+            self.conn.execute("BEGIN IMMEDIATE")
+            try:
+                task = self.conn.execute("SELECT status FROM tasks WHERE task_id=?", (task_id,)).fetchone()
+                if task is None:
+                    return self._finish_undo("NOT_FOUND")
+                if task["status"] in {TaskStatus.CREATED.value, TaskStatus.RUNNING.value}:
+                    return self._finish_undo("TASK_BUSY")
+                event = self.conn.execute("SELECT * FROM review_events WHERE event_id=? AND task_id=?", (event_id, task_id)).fetchone()
+                if event is None:
+                    return self._finish_undo("NOT_FOUND")
+                latest = self.conn.execute("SELECT event_id FROM review_events WHERE task_id=? AND undone_at IS NULL ORDER BY rowid DESC LIMIT 1", (task_id,)).fetchone()
+                if event["undone_at"] or latest is None or latest["event_id"] != event_id:
+                    return self._finish_undo("UNDO_ORDER")
+                rows = self.conn.execute("SELECT data FROM claims WHERE task_id=? ORDER BY rowid", (task_id,)).fetchall()
+                current = [json.loads(row["data"]) for row in rows]
+                if current != json.loads(event["after_claims"]):
+                    return self._finish_undo("STATE_CHANGED")
+                self.conn.execute("DELETE FROM claims WHERE task_id=?", (task_id,))
+                for data in json.loads(event["before_claims"]):
+                    claim = Claim.model_validate(data)
+                    self.conn.execute("INSERT INTO claims(claim_id,task_id,data,state,retry_count) VALUES(?,?,?,?,?)",
+                                      (claim.claim_id, task_id, claim.model_dump_json(), claim.state.value, claim.retry_count))
+                timestamp = now_utc().isoformat()
+                self.conn.execute("UPDATE review_events SET undone_at=?, undone_by=? WHERE event_id=?", (timestamp, reviewer.strip(), event_id))
+                self.conn.execute("UPDATE tasks SET updated_at=? WHERE task_id=?", (timestamp, task_id))
+                return self._finish_undo(None)
+            except BaseException:
+                self.conn.rollback()
+                raise
+
+    def _finish_undo(self, error: str | None) -> str | None:
+        if error:
+            self.conn.rollback()
+        else:
+            self.conn.commit()
+        return error
 
     def get_task(self, task_id: str) -> tuple[sqlite3.Row, list[Claim]] | None:
         with self._lock:

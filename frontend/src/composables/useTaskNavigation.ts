@@ -5,6 +5,7 @@ import type { useVerificationTask } from './useVerificationTask'
 /** Keep task and claim links restorable without persisting user text in the browser. */
 export function useTaskNavigation(session: ReturnType<typeof useVerificationTask>) {
   const selectedClaimId = ref<string | null>(null)
+  const reviewOpen = ref(false)
   let generation = 0
   let restoring = false
 
@@ -14,6 +15,8 @@ export function useTaskNavigation(session: ReturnType<typeof useVerificationTask
     else url.searchParams.delete('task')
     if (selectedClaimId.value) url.searchParams.set('claim', selectedClaimId.value)
     else url.searchParams.delete('claim')
+    if (reviewOpen.value && session.taskId.value && !selectedClaimId.value) url.searchParams.set('review', '1')
+    else url.searchParams.delete('review')
     if (url.href !== window.location.href) {
       window.history[push ? 'pushState' : 'replaceState']({ taskId: session.taskId.value }, '', url)
     }
@@ -28,12 +31,14 @@ export function useTaskNavigation(session: ReturnType<typeof useVerificationTask
     let id = params.get('task')
     const claimId = params.get('claim')
     selectedClaimId.value = claimId
+    reviewOpen.value = Boolean(id && !claimId && params.get('review') === '1')
     session.errorMessage.value = null
     try {
       // Older saved links contained only a claim; recover its parent task once.
       if (!id && claimId) id = (await getClaimDetail(claimId)).task_id
       if (request !== generation) return
       if (!id) {
+        reviewOpen.value = false
         session.startOver()
         return
       }
@@ -58,6 +63,7 @@ export function useTaskNavigation(session: ReturnType<typeof useVerificationTask
     generation += 1
     restoring = false
     selectedClaimId.value = claimId
+    reviewOpen.value = false
     session.errorMessage.value = null
     writeLocation(true)
     void session.loadDetail(claimId)
@@ -68,6 +74,18 @@ export function useTaskNavigation(session: ReturnType<typeof useVerificationTask
     generation += 1
     restoring = false
     selectedClaimId.value = null
+    reviewOpen.value = false
+    session.errorMessage.value = null
+    writeLocation(true)
+    window.scrollTo(0, 0)
+  }
+
+  function openReview(): void {
+    if (!session.taskId.value) return
+    generation += 1
+    restoring = false
+    selectedClaimId.value = null
+    reviewOpen.value = true
     session.errorMessage.value = null
     writeLocation(true)
     window.scrollTo(0, 0)
@@ -77,6 +95,7 @@ export function useTaskNavigation(session: ReturnType<typeof useVerificationTask
     generation += 1
     restoring = true
     selectedClaimId.value = null
+    reviewOpen.value = false
     session.startOver()
     writeLocation(true)
     restoring = false
@@ -88,5 +107,5 @@ export function useTaskNavigation(session: ReturnType<typeof useVerificationTask
     generation += 1
     window.removeEventListener('popstate', onPopState)
   })
-  return { selectedClaimId, restoreLocation, openClaim, returnToReport, newTask }
+  return { selectedClaimId, reviewOpen, restoreLocation, openClaim, openReview, returnToReport, newTask }
 }

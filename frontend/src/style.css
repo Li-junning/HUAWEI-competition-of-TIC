@@ -68,7 +68,12 @@ textarea:focus { border-color: #86b15d; box-shadow: 0 0 0 4px rgba(134, 177, 93,
 .notice-stack { display: grid; gap: 7px; margin-top: 16px; }.notice { margin: 0; padding: 9px 12px; border-radius: 7px; font-size: 12px; line-height: 1.5; }.notice.warning { color: #755d2a; background: #fff7df; }.notice.info { color: #547063; background: #eef5ee; }
 .claims-section { padding-bottom: 12px; }.claims-section > .section-heading { margin-bottom: 18px; }.claims-section h2 span { color: #6b9242; }.claims-section h2 small { color: #a2aea7; font-size: 13px; font-weight: 500; }.filters { display: flex; align-items: center; gap: 11px; color: #788780; font-size: 12px; }.filters select { padding: 8px 10px; border: 1px solid #dce7dc; border-radius: 8px; background: #fff; color: #456157; font-size: 12px; }.filters input { accent-color: #6e9b47; }
 .claims-list { display: grid; gap: 12px; }.claim-card { position: relative; overflow: hidden; border: 1px solid #e0e9e0; border-radius: 12px; background: #fff; }.claim-bar { position: absolute; inset: 0 auto 0 0; width: 4px; background: #aebcb4; }.claim-credible .claim-bar { background: #72ad62; }.claim-disputed .claim-bar { background: #d1a252; }.claim-incorrect .claim-bar { background: #d76b5e; }.claim-evidence_insufficient .claim-bar { background: #bca46a; }.claim-content { padding: 18px 20px 16px 23px; }.claim-heading { display: flex; align-items: center; gap: 9px; }.type-tag { padding: 5px 8px; color: #527067; background: #edf5ed; }.claim-location { color: #a0ada6; }.label-pill { padding: 6px 9px; }.label-credible { color: #3e7f4d; background: #e5f4e0; }.label-disputed { color: #9b7134; background: #fcf0d9; }.label-incorrect { color: #ad493f; background: #fae3df; }.label-evidence-insufficient { color: #826d42; background: #f5eddc; }.label-not-applicable { color: #7c8982; background: #edf0ed; }
-.claim-review-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; margin: 10px 0; }.claim-review-actions textarea { flex: 1 1 100%; min-height: 72px; padding: 10px 12px; border: 1px solid #dce5dd; border-radius: 8px; font: inherit; }.claim-review-actions small { flex-basis: 100%; color: #7b8982; }.danger-text { color: #a33b35; }
+.claim-review-actions { display: grid; gap: 11px; margin: 16px 0 18px; padding: 14px 16px; border: 1px solid #d7e5d6; border-radius: 12px; background: #f6faf5; }
+.claim-review-heading { display: flex; align-items: baseline; flex-wrap: wrap; gap: 5px 12px; }.claim-review-heading strong { color: #315745; font-size: 12px; }.claim-review-heading span, .claim-review-note { color: #718277; font-size: 11px; line-height: 1.5; }
+.claim-review-buttons { display: flex; flex-wrap: wrap; gap: 10px; }.claim-action-button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 38px; padding: 8px 14px; border: 1px solid transparent; border-radius: 8px; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; transition: background .2s, border-color .2s, transform .2s; }.claim-action-button:hover:not(:disabled) { transform: translateY(-1px); }.claim-action-button:focus-visible { outline: 2px solid #527c48; outline-offset: 2px; }.claim-action-button:disabled { cursor: not-allowed; opacity: .55; }.claim-action-button span { font-size: 17px; line-height: 1; }
+.claim-action-edit { border-color: #31654b; background: #31654b; color: #fff; }.claim-action-edit:hover:not(:disabled) { background: #244d39; }.claim-action-delete { border-color: #e6c4bf; background: #fff; color: #a3453c; }.claim-action-delete:hover:not(:disabled) { border-color: #d99990; background: #fff0ed; }.claim-action-cancel { border-color: #d4dfd6; background: #fff; color: #53675a; }.claim-action-cancel:hover:not(:disabled) { background: #edf3ee; }
+.claim-review-editor { display: grid; gap: 8px; }.claim-review-editor label { color: #315745; font-size: 12px; font-weight: 700; }.claim-review-editor textarea { min-height: 84px; margin: 0; padding: 10px 12px; border: 1px solid #cadbc9; border-radius: 8px; font: inherit; }.claim-review-note { display: block; }.danger-text { color: #a33b35; }
+@media (max-width: 480px) { .claim-review-buttons { flex-direction: column; }.claim-action-button { width: 100%; } }
 .manual-edit-note { display: grid; gap: 4px; margin: 10px 0; padding: 10px 12px; border-left: 3px solid #b18c48; background: #fbf7ec; color: #705b31; font-size: 12px; line-height: 1.5; }.manual-edit-note small { color: #81765f; }
 blockquote { margin: 14px 0 8px; padding-left: 12px; border-left: 2px solid #dce8d7; color: #7b8982; font-size: 12px; line-height: 1.6; }.claim-card h3 { margin-bottom: 8px; color: #25463c; font-size: 15px; line-height: 1.5; }.reason { margin-bottom: 12px; color: #64746c; font-size: 12px; line-height: 1.6; }.claim-foot { justify-content: flex-start; flex-wrap: wrap; color: #a0aca6; font: 10px 'DM Mono', monospace; }.text-button { margin-left: auto; padding: 4px 0; background: transparent; color: #6d944d; font-size: 11px; font-weight: 700; }.claim-detail { margin-top: 15px; padding-top: 15px; border-top: 1px solid #edf1ed; }.detail-row { margin-bottom: 9px; color: #62736a; font-size: 12px; line-height: 1.6; }.detail-row b { color: #395b4e; }.loading-line { padding: 18px 0; color: #7b9084; font-size: 12px; }
 .evidence-list { display: grid; gap: 12px; margin-top: 15px; }.evidence-cluster { padding: 11px; border: 1px solid #e1ebe0; border-radius: 9px; background: #f9fcf9; }.cluster-note { margin: 0 0 9px; color: #83938b; font: 10px 'DM Mono', monospace; }.evidence-item { padding: 12px; border: 1px solid #e6ede6; border-radius: 8px; background: #fff; }.evidence-item + .evidence-item { margin-top: 8px; }.evidence-topline { justify-content: flex-start; }.relation { padding: 4px 7px; }.relation-supports { color: #3b7845; background: #e6f4e1; }.relation-refutes { color: #ac493f; background: #fae3df; }.relation-partially_supports { color: #9b7134; background: #fcf0d9; }.relation-irrelevant, .relation-unknown { color: #75837c; background: #edf0ed; }.reprint-tag { padding: 4px 7px; color: #806b42; background: #f7eed7; }.source-link { margin-left: auto; color: #5a8a43; font-size: 11px; font-weight: 600; }.evidence-item h4 { margin: 9px 0 4px; color: #33564a; font-size: 13px; }.source-meta, .quality-reason, .raw-url { margin: 0; color: #8b9992; font-size: 10px; line-height: 1.5; }.excerpt { margin: 9px 0; color: #566a60; font-size: 12px; line-height: 1.65; }.raw-url { margin-top: 5px; overflow-wrap: anywhere; font-family: 'DM Mono', monospace; }
@@ -215,3 +220,55 @@ blockquote { margin: 14px 0 8px; padding-left: 12px; border-left: 2px solid #dce
   .coverage-panel, .claims-section, .claim-card, .source-text-panel { break-inside: auto; }
   .evidence-item { break-inside: avoid; }
 }
+
+/* Manual claim segmentation and audit trail */
+.review-workbench { margin: 18px 0 26px; padding: 22px; border: 1px solid #cadfc9; border-radius: 15px; background: #f9fcf8; box-shadow: 0 8px 24px rgba(40, 80, 50, .04); }
+.review-workbench-header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: start; gap: 18px; }
+.review-workbench h2 { margin: 2px 0 6px; color: #25463c; font-size: 20px; }
+.review-workbench-header p:last-child, .review-form p { margin: 0; color: #63786b; font-size: 12px; line-height: 1.6; }
+.reviewer-field { min-width: 210px; color: #345c49; font-size: 12px; font-weight: 700; }
+.reviewer-field small, .review-form small { display: block; margin-top: 6px; color: #778b7d; font-size: 11px; font-weight: 400; }
+.review-workbench input, .review-workbench select, .review-workbench textarea { box-sizing: border-box; width: 100%; margin-top: 7px; padding: 10px 12px; border: 1px solid #cbdccf; border-radius: 9px; background: #fff; color: #2a4438; font: inherit; }
+.review-workbench input:focus, .review-workbench select:focus, .review-workbench textarea:focus { outline: 2px solid #7fa968; outline-offset: 1px; }
+.review-mode-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 20px 0 16px; }
+.review-mode-tabs button { padding: 9px 15px; border: 1px solid #cdddcf; border-radius: 9px; background: #fff; color: #365849; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.review-mode-tabs button.active { border-color: #75a369; background: #e7f3df; color: #315d35; }
+.review-form { display: grid; justify-items: start; gap: 12px; }
+.review-form label, .review-source-field { width: 100%; max-width: 850px; }
+.review-form label { color: #385748; font-size: 12px; font-weight: 700; }
+.review-workbench .review-source-field { min-height: 86px; line-height: 1.7; resize: vertical; white-space: pre-wrap; }
+.review-form > .primary-button { margin-top: 2px; }
+.review-history { margin-top: 21px; border-top: 1px solid #dce9da; padding-top: 16px; }
+.review-history summary { color: #365b47; font-size: 13px; font-weight: 700; cursor: pointer; }
+.review-history ol { display: grid; gap: 9px; max-height: 380px; overflow: auto; margin: 13px 0 0; padding: 0; list-style: none; }
+.review-history li { padding: 12px 14px; border: 1px solid #e2eae1; border-radius: 9px; background: #fff; }
+.review-history li > div { display: flex; flex-wrap: wrap; gap: 6px 12px; color: #738579; font-size: 11px; }
+.review-history li strong { color: #355b42; font-size: 12px; }
+.review-history li p { margin: 8px 0 0; overflow-wrap: anywhere; color: #556c5d; font-size: 11px; }
+.review-history li .secondary-button { margin-top: 10px; padding: 6px 10px; font-size: 11px; }
+@media (max-width: 560px) { .review-workbench { padding: 16px; }.reviewer-field { width: 100%; }.review-mode-tabs button { flex: 1 1 auto; } }
+@media print { .review-workbench { display: none !important; } }
+
+/* Dedicated manual review page */
+.review-entry-button { border-color: #84a971; background: #e7f2df; color: #285640; }
+.review-entry-button:hover { background: #d9eccf; }
+.review-page { padding-top: 0; }
+.review-page-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 28px; }
+.review-page-top span { overflow-wrap: anywhere; color: #8a9892; font: 11px 'DM Mono', monospace; }
+.review-page-intro { max-width: 750px; margin-bottom: 28px; }
+.review-page-intro h1 { margin-bottom: 12px; font-size: clamp(35px, 5vw, 57px); }
+.review-page-intro > p:last-child { margin: 0; color: #657a6d; font-size: 14px; line-height: 1.7; }
+.review-page-layout { display: grid; grid-template-columns: minmax(0, 1.9fr) minmax(255px, .85fr); align-items: start; gap: 22px; }
+.review-page-main { min-width: 0; }
+.review-page .review-workbench { margin: 0; padding: 26px; }
+.review-page-aside { position: sticky; top: 22px; max-height: calc(100vh - 44px); overflow: auto; padding: 22px; border: 1px solid #dce7dc; border-radius: 15px; background: #fff; }
+.review-page-aside-heading h2 { display: flex; justify-content: space-between; gap: 10px; margin: 0 0 17px; color: #294b3b; font-size: 17px; }
+.review-page-aside-heading h2 span { color: #809482; font: 11px 'DM Mono', monospace; }
+.review-page-claims { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.review-page-claims li { display: grid; grid-template-columns: 25px minmax(0, 1fr); gap: 8px; padding: 11px; border: 1px solid #e4ebe2; border-radius: 9px; background: #fbfdfa; }
+.review-page-claims li > span { color: #81a76a; font: 12px 'DM Mono', monospace; }
+.review-page-claims small { color: #839489; font-size: 10px; }
+.review-page-claims p { margin: 5px 0 0; overflow-wrap: anywhere; color: #365347; font-size: 12px; line-height: 1.6; }
+.review-page-empty { color: #778b7d; font-size: 12px; }
+@media (max-width: 850px) { .review-page-layout { grid-template-columns: 1fr; }.review-page-aside { position: static; max-height: none; }.review-page .review-workbench { padding: 20px; } }
+@media (max-width: 560px) { .review-page-top { align-items: flex-start; }.review-page-top span { width: 100%; }.review-page .review-workbench { padding: 16px; } }

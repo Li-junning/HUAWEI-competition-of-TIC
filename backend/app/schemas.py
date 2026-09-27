@@ -75,6 +75,7 @@ class CreateTaskResponse(BaseModel):
 class EditClaimRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     normalized_claim: str = Field(min_length=1, max_length=2000)
+    reviewer: str = Field(default="未署名", min_length=1, max_length=40)
 
     @field_validator("normalized_claim")
     @classmethod
@@ -83,6 +84,34 @@ class EditClaimRequest(BaseModel):
         if not value:
             raise ValueError("normalized_claim must not be blank")
         return value
+
+
+class AddClaimRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    char_start: int = Field(ge=0)
+    char_end: int = Field(gt=0)
+    normalized_claim: str = Field(min_length=1, max_length=2000)
+    reviewer: str = Field(min_length=1, max_length=40)
+
+
+class SplitClaimRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    split_at: int = Field(gt=0)
+    first_claim: str = Field(min_length=1, max_length=2000)
+    second_claim: str = Field(min_length=1, max_length=2000)
+    reviewer: str = Field(min_length=1, max_length=40)
+
+
+class MergeClaimsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    claim_ids: list[str] = Field(min_length=2, max_length=2)
+    normalized_claim: str = Field(min_length=1, max_length=2000)
+    reviewer: str = Field(min_length=1, max_length=40)
+
+
+class UndoReviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    reviewer: str = Field(min_length=1, max_length=40)
 
 
 class EvidenceItem(BaseModel):

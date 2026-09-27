@@ -38,15 +38,23 @@ const stateText: Record<ClaimState, string> = {
       <h3>{{ claim.normalized_claim }}</h3>
       <div v-if="claim.manually_edited" class="manual-edit-note"><b>人工修改的声明</b><span>原文（UTF-16 {{ claim.char_start }}–{{ claim.char_end }}）：{{ claim.source_text }}</span><small>修改后的文字用于检索，不是原文逐字摘录。</small></div>
       <div v-if="editable" class="claim-review-actions">
-        <button v-if="!editing" type="button" class="text-button" @click="draft = claim.normalized_claim; editing = true">修改声明文字</button>
-        <template v-else>
-          <label class="sr-only" :for="`claim-edit-${claim.claim_id}`">修改后的声明</label>
+        <div class="claim-review-heading">
+          <strong>人工复核</strong>
+          <span>断句或表述需要调整时，可在这里处理</span>
+        </div>
+        <div v-if="!editing" class="claim-review-buttons">
+          <button type="button" class="claim-action-button claim-action-edit" @click="draft = claim.normalized_claim; editing = true"><span aria-hidden="true">✎</span> 修改声明</button>
+          <button type="button" class="claim-action-button claim-action-delete" :disabled="removeDisabled" @click="emit('remove', claim.claim_id)"><span aria-hidden="true">×</span> {{ removeDisabled ? '正在删除…' : '删除声明' }}</button>
+        </div>
+        <div v-else class="claim-review-editor">
+          <label :for="`claim-edit-${claim.claim_id}`">修改后的声明</label>
           <textarea :id="`claim-edit-${claim.claim_id}`" v-model="draft" maxlength="2000" rows="3"></textarea>
-          <button type="button" class="text-button" :disabled="!draft.trim()" @click="emit('edit', claim.claim_id, draft); editing = false">保存修改</button>
-          <button type="button" class="text-button" @click="editing = false">取消</button>
-        </template>
-        <button type="button" class="text-button danger-text" :disabled="removeDisabled" @click="emit('remove', claim.claim_id)">{{ removeDisabled ? '正在删除…' : '删除这条声明' }}</button>
-        <small>修改后会清除旧判断并标记为未核验；原文与位置保持不变。</small>
+          <div class="claim-review-buttons">
+            <button type="button" class="claim-action-button claim-action-edit" :disabled="!draft.trim()" @click="emit('edit', claim.claim_id, draft); editing = false">保存修改</button>
+            <button type="button" class="claim-action-button claim-action-cancel" @click="editing = false">取消</button>
+          </div>
+        </div>
+        <small class="claim-review-note">修改表述会清除旧判断并标记为未核验；删除后可在操作记录中撤销。</small>
       </div>
       <p v-if="claim.label === 'evidence_insufficient'" class="claim-caution">当前材料不足以判断该声明；这不表示声明为假。</p>
       <p v-else-if="claim.label === 'disputed' || claim.label === 'incorrect'" class="claim-caution risk">该声明存在反向或冲突证据，请重点核对来源质量与适用条件。</p>

@@ -1,4 +1,4 @@
-import type { ApiErrorBody, ClaimDetail, ClaimPage, TaskCreated, TaskSummary, ServiceStatus } from '../types/api'
+import type { ApiErrorBody, ClaimDetail, ClaimPage, ReviewEvent, TaskCreated, TaskSummary, ServiceStatus } from '../types/api'
 
 const API_PREFIX = '/api'
 
@@ -66,14 +66,42 @@ export function retryClaim(claimId: string): Promise<ClaimListItemResponse> {
   return requestJson<ClaimListItemResponse>(`/claims/${encodeURIComponent(claimId)}/retry`, { method: 'POST' })
 }
 
-export function editClaim(claimId: string, normalizedClaim: string): Promise<ClaimDetail> {
+export function editClaim(claimId: string, normalizedClaim: string, reviewer: string): Promise<ClaimDetail> {
   return requestJson<ClaimDetail>(`/claims/${encodeURIComponent(claimId)}`, {
-    method: 'PATCH', body: JSON.stringify({ normalized_claim: normalizedClaim }),
+    method: 'PATCH', body: JSON.stringify({ normalized_claim: normalizedClaim, reviewer }),
   })
 }
 
-export function deleteClaim(claimId: string): Promise<void> {
-  return requestJson<void>(`/claims/${encodeURIComponent(claimId)}`, { method: 'DELETE' })
+export function deleteClaim(claimId: string, reviewer: string): Promise<void> {
+  return requestJson<void>(`/claims/${encodeURIComponent(claimId)}?reviewer=${encodeURIComponent(reviewer)}`, { method: 'DELETE' })
+}
+
+export function addClaim(taskId: string, charStart: number, charEnd: number, normalizedClaim: string, reviewer: string): Promise<ClaimDetail> {
+  return requestJson<ClaimDetail>(`/tasks/${encodeURIComponent(taskId)}/claims`, {
+    method: 'POST', body: JSON.stringify({ char_start: charStart, char_end: charEnd, normalized_claim: normalizedClaim, reviewer }),
+  })
+}
+
+export function splitClaim(claimId: string, splitAt: number, firstClaim: string, secondClaim: string, reviewer: string): Promise<ClaimDetail[]> {
+  return requestJson<ClaimDetail[]>(`/claims/${encodeURIComponent(claimId)}/split`, {
+    method: 'POST', body: JSON.stringify({ split_at: splitAt, first_claim: firstClaim, second_claim: secondClaim, reviewer }),
+  })
+}
+
+export function mergeClaims(taskId: string, claimIds: string[], normalizedClaim: string, reviewer: string): Promise<ClaimDetail> {
+  return requestJson<ClaimDetail>(`/tasks/${encodeURIComponent(taskId)}/claims/merge`, {
+    method: 'POST', body: JSON.stringify({ claim_ids: claimIds, normalized_claim: normalizedClaim, reviewer }),
+  })
+}
+
+export function getReviewHistory(taskId: string): Promise<{ items: ReviewEvent[] }> {
+  return requestJson<{ items: ReviewEvent[] }>(`/tasks/${encodeURIComponent(taskId)}/review-history`)
+}
+
+export function undoReview(taskId: string, eventId: string, reviewer: string): Promise<{ undone: boolean }> {
+  return requestJson<{ undone: boolean }>(`/tasks/${encodeURIComponent(taskId)}/review-history/${encodeURIComponent(eventId)}/undo`, {
+    method: 'POST', body: JSON.stringify({ reviewer }),
+  })
 }
 
 export function exportUrl(taskId: string, format: 'json' | 'md'): string {
