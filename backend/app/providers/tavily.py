@@ -8,9 +8,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import os
+import random
 import time
 from collections.abc import Callable
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -23,6 +27,7 @@ from .network import network_permission_denied
 MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 MAX_RETRIES = 2
 REQUEST_TIMEOUT_SECONDS = 20.0
+TOTAL_TIMEOUT_SECONDS = 60.0
 
 
 class _DeadlineExceeded(TimeoutError):
@@ -59,6 +64,9 @@ class TavilySearchProvider:
         cleaned_query = " ".join(query.split())
         if not cleaned_query:
             return []
+        # Bound each query so it leaves time for other searches and judgment.
+        deadline = min(deadline if deadline is not None else math.inf,
+                       time.monotonic() + TOTAL_TIMEOUT_SECONDS)
         payload = {
             "query": cleaned_query,
             "search_depth": "basic",
@@ -74,26 +82,25 @@ class TavilySearchProvider:
             if remaining is not None and remaining <= 0:
                 raise SearchProviderError("SEARCH_TIMEOUT")
             try:
-                request = self._post(headers, payload)
-                if deadline is None:
-                    status, response_headers, raw_body = await request
-                else:
-                    remaining = _remaining(deadline)
-                    if remaining is None or remaining <= 0:
-                        raise _DeadlineExceeded()
-                    status, response_headers, raw_body = await asyncio.wait_for(request, timeout=remaining)
+                remaining = _remaining(deadline)
+                if remaining is None or remaining <= 0:
+                    raise _DeadlineExceeded()
+                status, response_headers, raw_body = await asyncio.wait_for(
+                    self._post(headers, payload), timeout=min(REQUEST_TIMEOUT_SECONDS, remaining))
             except (asyncio.TimeoutError, _DeadlineExceeded, httpx.TimeoutException) as exc:
                 if isinstance(exc, (_DeadlineExceeded, asyncio.TimeoutError)) or (_remaining(deadline) is not None and _remaining(deadline) <= 0):
                     raise SearchProviderError("SEARCH_TIMEOUT") from exc
                 if attempt < MAX_RETRIES:
-                    await self._sleep_before_deadline(0.5 * (2**attempt), deadline)
+                    if not await self._sleep_before_deadline(_backoff(attempt), deadline):
+                        raise SearchProviderError("SEARCH_TIMEOUT") from exc
                     continue
                 raise SearchProviderError("SEARCH_TIMEOUT") from exc
             except httpx.HTTPError as exc:
                 if network_permission_denied(exc):
                     raise SearchProviderError("SEARCH_NETWORK_PERMISSION") from exc
                 if attempt < MAX_RETRIES:
-                    await self._sleep_before_deadline(0.5 * (2**attempt), deadline)
+                    if not await self._sleep_before_deadline(_backoff(attempt), deadline):
+                        raise SearchProviderError("SEARCH_CONNECTION") from exc
                     continue
                 raise SearchProviderError("SEARCH_CONNECTION") from exc
 
@@ -101,8 +108,8 @@ class TavilySearchProvider:
                 return self._parse_results(raw_body)
             if status == 429 or 500 <= status < 600:
                 if attempt < MAX_RETRIES:
-                    await self._sleep_before_deadline(_retry_delay(response_headers, attempt), deadline)
-                    continue
+                    if await self._sleep_before_deadline(_retry_delay(response_headers, attempt), deadline):
+                        continue
                 raise SearchProviderError("SEARCH_RATE_LIMIT" if status == 429 else "SEARCH_UNAVAILABLE")
             # Do not reveal provider response text, key material, or request details.
             code = {401: "SEARCH_AUTH", 403: "SEARCH_FORBIDDEN", 432: "SEARCH_QUOTA", 433: "SEARCH_QUOTA"}.get(status, "SEARCH_REJECTED")
@@ -124,16 +131,17 @@ class TavilySearchProvider:
                         raise ProviderError("Tavily response exceeded the configured size limit")
                 return response.status_code, response.headers, bytes(chunks)
 
-    async def _sleep_before_deadline(self, delay: float, deadline: float | None) -> None:
+    async def _sleep_before_deadline(self, delay: float, deadline: float | None) -> bool:
         remaining = _remaining(deadline)
         if remaining is not None:
-            if remaining <= 0:
-                return
-            delay = min(delay, remaining)
+            # Never shorten a provider's Retry-After to force an early retry.
+            if remaining <= delay:
+                return False
         if self._sleep is time.sleep:
             await asyncio.sleep(delay)
         else:
             self._sleep(delay)
+        return True
 
     @staticmethod
     def _parse_results(raw_body: bytes) -> list[SearchResult]:
@@ -179,7 +187,19 @@ def _retry_delay(headers: httpx.Headers, attempt: int) -> float:
     retry_after = headers.get("retry-after")
     try:
         if retry_after is not None:
-            return min(max(float(retry_after), 0.0), 10.0)
+            seconds = float(retry_after)
+            if math.isfinite(seconds):
+                return max(seconds, 0.0)
     except ValueError:
-        pass
-    return 0.5 * (2**attempt)
+        try:
+            when = parsedate_to_datetime(retry_after)
+            if when.tzinfo is None:
+                when = when.replace(tzinfo=timezone.utc)
+            return max(0.0, (when - datetime.now(timezone.utc)).total_seconds())
+        except (ValueError, TypeError, OverflowError):
+            pass
+    return _backoff(attempt)
+
+
+def _backoff(attempt: int) -> float:
+    return min(0.5 * (2**attempt), 4.0) + random.uniform(0.0, 0.25)

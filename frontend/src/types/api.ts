@@ -50,6 +50,7 @@ export interface ClaimListItem {
   char_end: number
   type: ClaimType
   normalized_claim: string
+  manually_edited: boolean
   entities: string[]
   conditions: string[]
   queries: string[]

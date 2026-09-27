@@ -1,0 +1,28 @@
+[
+  {
+    "case_id": "who_constitution_entry_into_force_1948",
+    "description": "公开权威来源示例；人工编写的事实句，不是采集的 AI 回答，也不计入系统准确率",
+    "source": "curated_public_fact_seed",
+    "input_text": "世界卫生组织宪章于1948年4月7日生效。",
+    "expected": {
+      "label": "credible"
+    },
+    "annotation": {
+      "review_status": "example_not_independently_reviewed",
+      "label_basis": "世界卫生组织官网的宪章页面明确记载生效日期；此样本供人工盲测流程演练，不代表自然 AI 回答分布。",
+      "checked_at": "2026-09-27",
+      "sources": [
+        {
+          "url": "https://www.who.int/about/governance/constitution",
+          "relation": "supports",
+          "excerpt_paraphrase": "世界卫生组织宪章于1948年4月7日生效。"
+        },
+        {
+          "url": "https://www.who.int/about/history",
+          "relation": "supports",
+          "excerpt_paraphrase": "世界卫生组织官网历史页记载，其宪章于1948年4月7日生效。"
+        }
+      ]
+    }
+  }
+]

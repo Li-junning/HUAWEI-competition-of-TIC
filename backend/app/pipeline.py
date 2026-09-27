@@ -144,6 +144,9 @@ class Pipeline:
                     self.storage.save_claim(pending)
                 failures.append("task_budget")
                 break
+            if claim.state == ClaimState.UNCHECKED:
+                self.storage.save_claim(claim)
+                continue
             if claim.label is not None:
                 claim.state = ClaimState.DONE
                 claim.reason = "该内容不适用于事实核验。"

@@ -72,6 +72,19 @@ class CreateTaskResponse(BaseModel):
     status: TaskStatus
 
 
+class EditClaimRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    normalized_claim: str = Field(min_length=1, max_length=2000)
+
+    @field_validator("normalized_claim")
+    @classmethod
+    def claim_not_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("normalized_claim must not be blank")
+        return value
+
+
 class EvidenceItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
     evidence_id: str
@@ -131,6 +144,7 @@ class Claim(BaseModel):
     char_end: int = Field(ge=0)
     type: str = "general"
     normalized_claim: str
+    manually_edited: bool = False
     entities: list[str] = Field(default_factory=list)
     conditions: list[str] = Field(default_factory=list)
     queries: list[str] = Field(default_factory=list)

@@ -8,6 +8,7 @@ import threading
 from pathlib import Path
 from typing import Any, Iterable
 
+from .reference_resolution import has_unresolved_reference
 from .schemas import Claim, ClaimState, TaskStatus, TaskSummary, now_utc
 
 
@@ -100,9 +101,15 @@ class Storage:
                     status = row["status"]
                     if status in {TaskStatus.CREATED.value, TaskStatus.RUNNING.value}:
                         result = (None, "TASK_BUSY")
+                    elif has_unresolved_reference(claim.source_text, claim.normalized_claim):
+                        result = (None, "RETRY_NOT_ALLOWED")
                     elif claim.retry_count >= max_retries:
                         result = (None, "RETRY_LIMIT")
-                    elif claim.label and claim.label.value not in {"evidence_insufficient"} and claim.state.value != "failed":
+                    elif not (
+                        claim.state.value == "failed"
+                        or (claim.label and claim.label.value == "evidence_insufficient")
+                        or (claim.manually_edited and claim.state.value == "unchecked")
+                    ):
                         result = (None, "RETRY_NOT_ALLOWED")
                     else:
                         claim.retry_count += 1
@@ -126,6 +133,69 @@ class Storage:
         with self._lock:
             row = self.conn.execute("SELECT data FROM claims WHERE claim_id = ?", (claim_id,)).fetchone()
         return Claim.model_validate_json(row[0]) if row else None
+
+    def edit_claim(self, claim_id: str, normalized_claim: str) -> tuple[Claim | None, str | None]:
+        """Apply a user's wording correction without retaining a stale verdict."""
+        with self._lock:
+            self.conn.execute("BEGIN IMMEDIATE")
+            try:
+                row = self.conn.execute(
+                    "SELECT c.data, t.status FROM claims c JOIN tasks t ON t.task_id=c.task_id WHERE c.claim_id=?",
+                    (claim_id,),
+                ).fetchone()
+                if row is None:
+                    result = (None, "NOT_FOUND")
+                elif row["status"] in {TaskStatus.CREATED.value, TaskStatus.RUNNING.value}:
+                    result = (None, "TASK_BUSY")
+                else:
+                    claim = Claim.model_validate_json(row["data"])
+                    claim.normalized_claim = normalized_claim.strip()
+                    claim.manually_edited = True
+                    claim.label = None
+                    claim.support_score = None
+                    claim.reason = "声明已由用户修改，当前没有对应的新证据判断。"
+                    claim.state = ClaimState.UNCHECKED
+                    claim.retry_count = 0
+                    claim.type = "general"
+                    claim.entities = []
+                    claim.conditions = []
+                    claim.queries = []
+                    claim.evidence_clusters = []
+                    claim.evidence_cluster_ids = []
+                    claim.paper_check = None
+                    self.conn.execute("UPDATE claims SET data=?, state=?, retry_count=0 WHERE claim_id=?",
+                                      (claim.model_dump_json(), claim.state.value, claim_id))
+                    self.conn.execute("UPDATE tasks SET updated_at=? WHERE task_id=?",
+                                      (now_utc().isoformat(), claim.task_id))
+                    result = (claim, None)
+                self.conn.commit()
+                return result
+            except BaseException:
+                self.conn.rollback()
+                raise
+
+    def delete_claim(self, claim_id: str) -> tuple[bool, str | None]:
+        with self._lock:
+            self.conn.execute("BEGIN IMMEDIATE")
+            try:
+                row = self.conn.execute(
+                    "SELECT c.task_id, t.status FROM claims c JOIN tasks t ON t.task_id=c.task_id WHERE c.claim_id=?",
+                    (claim_id,),
+                ).fetchone()
+                if row is None:
+                    result = (False, "NOT_FOUND")
+                elif row["status"] in {TaskStatus.CREATED.value, TaskStatus.RUNNING.value}:
+                    result = (False, "TASK_BUSY")
+                else:
+                    self.conn.execute("DELETE FROM claims WHERE claim_id=?", (claim_id,))
+                    self.conn.execute("UPDATE tasks SET updated_at=? WHERE task_id=?",
+                                      (now_utc().isoformat(), row["task_id"]))
+                    result = (True, None)
+                self.conn.commit()
+                return result
+            except BaseException:
+                self.conn.rollback()
+                raise
 
     def list_claims(self, task_id: str, offset: int = 0, limit: int = 20) -> tuple[list[Claim], int]:
         with self._lock:

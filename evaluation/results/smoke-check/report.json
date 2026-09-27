@@ -1,0 +1,177 @@
+{
+  "schema_version": 1,
+  "mode": "离线合成证据夹具",
+  "source": "..\\evaluation\\smoke_cases.json",
+  "caveat": "夹具与离线预测评估仅验证语义处理和指标流程；不得解释为真实联网准确率。",
+  "metrics": {
+    "classification": {
+      "denominator": 3,
+      "correct": 1,
+      "accuracy": 0.3333333333333333,
+      "confusion_matrix_rows_gold_columns_prediction": {
+        "credible": {
+          "credible": 0,
+          "disputed": 0,
+          "incorrect": 0,
+          "evidence_insufficient": 1,
+          "unknown": 0
+        },
+        "disputed": {
+          "credible": 0,
+          "disputed": 0,
+          "incorrect": 0,
+          "evidence_insufficient": 0,
+          "unknown": 0
+        },
+        "incorrect": {
+          "credible": 0,
+          "disputed": 0,
+          "incorrect": 0,
+          "evidence_insufficient": 1,
+          "unknown": 0
+        },
+        "evidence_insufficient": {
+          "credible": 0,
+          "disputed": 0,
+          "incorrect": 0,
+          "evidence_insufficient": 1,
+          "unknown": 0
+        }
+      },
+      "abstentions": 3,
+      "abstention_rate": 1.0,
+      "invalid_output_count": 0,
+      "evidence_insufficient_predicted_incorrect": 0,
+      "per_class": {
+        "credible": {
+          "support": 1,
+          "precision": null,
+          "recall": 0.0
+        },
+        "disputed": {
+          "support": 0,
+          "precision": null,
+          "recall": null
+        },
+        "incorrect": {
+          "support": 1,
+          "precision": null,
+          "recall": 0.0
+        },
+        "evidence_insufficient": {
+          "support": 1,
+          "precision": 0.3333333333333333,
+          "recall": 1.0
+        }
+      }
+    },
+    "functional_constraints": {
+      "sample_denominator": 0,
+      "checks": {},
+      "status": "measured_on_synthetic_fixture"
+    },
+    "timing": {
+      "sample_count": 8,
+      "total_ms": 23.539,
+      "mean_ms": 2.942
+    }
+  },
+  "results": [
+    {
+      "case_id": "credible_direct_source",
+      "expected": "credible",
+      "predicted": "evidence_insufficient",
+      "technical_failure": false,
+      "pipeline_state": null,
+      "invalid_output": false,
+      "elapsed_ms": 22.078,
+      "claim_count": 1,
+      "truncated": false,
+      "functional_checks": {}
+    },
+    {
+      "case_id": "incorrect_year",
+      "expected": "incorrect",
+      "predicted": "evidence_insufficient",
+      "technical_failure": false,
+      "pipeline_state": null,
+      "invalid_output": false,
+      "elapsed_ms": 0.275,
+      "claim_count": 1,
+      "truncated": false,
+      "functional_checks": {}
+    },
+    {
+      "case_id": "reprint_cluster",
+      "expected": null,
+      "predicted": "evidence_insufficient",
+      "technical_failure": false,
+      "pipeline_state": null,
+      "invalid_output": false,
+      "elapsed_ms": 0.207,
+      "claim_count": 1,
+      "truncated": false,
+      "functional_checks": {}
+    },
+    {
+      "case_id": "opinion_not_applicable",
+      "expected": "not_applicable",
+      "predicted": "evidence_insufficient",
+      "technical_failure": false,
+      "pipeline_state": null,
+      "invalid_output": false,
+      "elapsed_ms": 0.183,
+      "claim_count": 1,
+      "truncated": false,
+      "functional_checks": {}
+    },
+    {
+      "case_id": "paper_exists_claim_unsupported",
+      "expected": null,
+      "predicted": "evidence_insufficient",
+      "technical_failure": false,
+      "pipeline_state": null,
+      "invalid_output": false,
+      "elapsed_ms": 0.195,
+      "claim_count": 1,
+      "truncated": false,
+      "functional_checks": {}
+    },
+    {
+      "case_id": "page_unavailable",
+      "expected": "evidence_insufficient",
+      "predicted": "evidence_insufficient",
+      "technical_failure": false,
+      "pipeline_state": null,
+      "invalid_output": false,
+      "elapsed_ms": 0.158,
+      "claim_count": 1,
+      "truncated": false,
+      "functional_checks": {}
+    },
+    {
+      "case_id": "provider_partial_failure",
+      "expected": null,
+      "predicted": "evidence_insufficient",
+      "technical_failure": false,
+      "pipeline_state": null,
+      "invalid_output": false,
+      "elapsed_ms": 0.259,
+      "claim_count": 2,
+      "truncated": false,
+      "functional_checks": {}
+    },
+    {
+      "case_id": "claim_limit_truncation",
+      "expected": null,
+      "predicted": "evidence_insufficient",
+      "technical_failure": false,
+      "pipeline_state": null,
+      "invalid_output": false,
+      "elapsed_ms": 0.184,
+      "claim_count": 1,
+      "truncated": false,
+      "functional_checks": {}
+    }
+  ]
+}

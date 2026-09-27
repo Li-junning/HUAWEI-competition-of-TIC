@@ -77,6 +77,12 @@ EvidenceRelation = supports | refutes | partially_supports | irrelevant | unknow
 }
 ```
 
+## 任务原文
+
+`GET /api/tasks/{task_id}/input` 返回 `{task_id,input_text}`，其中 `input_text` 是创建任务时去除首尾空白后保存的完整原文。声明的 UTF-16 半开区间以此文本为准，刷新后可以重新定位；响应带 `Cache-Control: no-store`，不会把原文加入任务摘要的周期轮询。任务不存在返回统一的 404 错误。
+
+此接口沿用当前任务 API 的访问范围：能连接服务并持有任务 ID 的人可以读取任务和原文，没有新增身份或任务所有权隔离。
+
 ## 声明列表与详情
 
 `GET /api/tasks/{task_id}/claims?offset=0&limit=20` 返回 `{items,total,offset,limit}`。列表项包含：
@@ -103,6 +109,10 @@ EvidenceRelation = supports | refutes | partially_supports | irrelevant | unknow
 ```
 
 `GET /api/claims/{claim_id}` 在列表项基础上返回 `evidence_clusters` 和可选 `paper_check`。每个证据项至少包含 `evidence_id/url/title/publisher/published_at/retrieved_at/excerpt/relation/quality_reason/is_reprint`，绝不包含网页 HTML。
+
+## 人工复核声明
+
+任务结束后，`PATCH /api/claims/{claim_id}` 可修改 `normalized_claim`（1–2000 字符）。`source_text`、原文 UTF-16 区间和任务原文不变；为避免旧证据支持修改后的文字，服务会清空标签、分数、查询和证据，并把声明标记为 `unchecked`。返回项会带 `manually_edited: true`。用户可从声明详情重新检索修改后的文字；在该修改尚未重查时允许一次显式重试，重试使用现有任务/provider 调用预算。获得新结论后会遵循常规重试限制。`DELETE /api/claims/{claim_id}` 会从任务列表、摘要计数和后续导出中移除此声明，但不会改写原文或其他声明。任务处理中两种操作均返回 `409 TASK_BUSY`。
 
 ## 重试
 

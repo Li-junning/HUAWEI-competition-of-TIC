@@ -95,7 +95,9 @@ describe('verification session', () => {
 
   it('retains a completed summary if loading its claims fails', async () => {
     vi.mocked(api.getClaims).mockRejectedValue(new api.ApiError('暂时不可用', 503))
-    await session.submit()
+    const pending = session.submit()
+    await vi.advanceTimersByTimeAsync(1_750)
+    await pending
     expect(session.task.value).toEqual(summary)
     expect(session.phase.value).toBe('report')
     expect(session.errorMessage.value).toBe('暂时不可用')
@@ -103,7 +105,9 @@ describe('verification session', () => {
 
   it('keeps a created task available for refresh when its first status request fails', async () => {
     vi.mocked(api.getTask).mockRejectedValue(new api.ApiError('连接失败', 0))
-    await session.submit()
+    const pending = session.submit()
+    await vi.advanceTimersByTimeAsync(1_750)
+    await pending
     expect(session.phase.value).toBe('report')
     expect(session.taskId.value).toBe('t_test')
     expect(session.errorMessage.value).toBe('连接失败')
@@ -158,6 +162,112 @@ describe('verification session', () => {
     await firstPoll
     expect(api.getTask).toHaveBeenCalledTimes(2)
     expect(session.task.value?.status).toBe('succeeded')
+  })
+
+  it('restores a running task, returns after its initial load and keeps polling in the background', async () => {
+    vi.mocked(api.getTask)
+      .mockResolvedValueOnce({ ...summary, status: 'running' })
+      .mockResolvedValueOnce(summary)
+    await session.restoreTask('t_test')
+    expect(session.task.value?.status).toBe('running')
+    expect(session.claims.value).toEqual([claim])
+    expect(session.phase.value).toBe('processing')
+    await vi.advanceTimersByTimeAsync(1500)
+    expect(session.task.value?.status).toBe('succeeded')
+    expect(session.phase.value).toBe('report')
+  })
+
+  it('retries transient GET failures with bounded delay but never retries task creation', async () => {
+    vi.mocked(api.createTask).mockRejectedValueOnce(new api.ApiError('限流', 429))
+    await session.submit()
+    expect(api.createTask).toHaveBeenCalledTimes(1)
+    expect(api.getTask).not.toHaveBeenCalled()
+
+    vi.mocked(api.getTask)
+      .mockRejectedValueOnce(new api.ApiError('服务暂不可用', 503))
+      .mockResolvedValueOnce(summary)
+    const restore = session.restoreTask('t_test')
+    await vi.advanceTimersByTimeAsync(250)
+    await restore
+    expect(api.getTask).toHaveBeenCalledTimes(2)
+    expect(session.task.value).toEqual(summary)
+  })
+
+  it('ignores a detail response after switching to another task', async () => {
+    let finish!: (value: ClaimDetail) => void
+    vi.mocked(api.getClaimDetail).mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+    session.taskId.value = 't_test'
+    const pending = session.loadDetail('c_test')
+    vi.mocked(api.getTask).mockResolvedValueOnce({ ...summary, task_id: 't_other' })
+    vi.mocked(api.getClaims).mockResolvedValueOnce({ items: [], total: 0, offset: 0, limit: 20 })
+    await session.restoreTask('t_other')
+    finish({ ...claim, task_id: 't_test' })
+    await pending
+    expect(session.details.value).toEqual({})
+    expect(session.activeDetail.value).toBeNull()
+  })
+
+  it('refreshes a cached detail when processing ends and ignores an older detail response', async () => {
+    const processingClaim = { ...claim, state: 'retrieving' as const, evidence_cluster_ids: [] }
+    const doneClaim = { ...claim, state: 'done' as const, evidence_cluster_ids: ['cluster_1'] }
+    const oldDetail = { ...claim, state: 'retrieving' as const, evidence_cluster_ids: [], evidence_clusters: [] }
+    const finalDetail = {
+      ...claim,
+      state: 'done' as const,
+      evidence_cluster_ids: ['cluster_1'],
+      evidence_clusters: [{ cluster_id: 'cluster_1', independence_reason: '独立来源', items: [] }],
+    }
+    vi.mocked(api.getClaims).mockResolvedValueOnce({ items: [processingClaim], total: 1, offset: 0, limit: 20 })
+    await session.restoreTask('t_test')
+    let finishOld!: (value: ClaimDetail) => void
+    vi.mocked(api.getClaimDetail)
+      .mockReturnValueOnce(new Promise(resolve => { finishOld = resolve }))
+      .mockResolvedValueOnce(finalDetail)
+    const oldRequest = session.loadDetail('c_test')
+    await Promise.resolve()
+    vi.mocked(api.getTask).mockResolvedValueOnce(summary)
+    vi.mocked(api.getClaims).mockResolvedValueOnce({ items: [doneClaim], total: 1, offset: 0, limit: 20 })
+    await session.resumePolling()
+    finishOld(oldDetail)
+    await oldRequest
+    expect(api.getClaimDetail).toHaveBeenCalledTimes(2)
+    expect(session.details.value.c_test?.state).toBe('done')
+    expect(session.details.value.c_test?.evidence_clusters).toHaveLength(1)
+  })
+
+  it.each(['stop', 'task-change'] as const)('does not retry a failed GET after %s', async (action) => {
+    vi.mocked(api.getTask).mockRejectedValue(new api.ApiError('暂时不可用', 503))
+    const pending = session.restoreTask('t_test')
+    await Promise.resolve()
+    if (action === 'stop') session.stopPolling()
+    else session.startOver()
+    await vi.advanceTimersByTimeAsync(2_000)
+    await pending
+    expect(api.getTask).toHaveBeenCalledTimes(1)
+  })
+
+  it('allows refreshing claims for a terminal task after a failed claims request', async () => {
+    vi.mocked(api.getClaims).mockRejectedValue(new api.ApiError('暂时不可用', 503))
+    const restored = session.restoreTask('t_test')
+    await vi.advanceTimersByTimeAsync(1_750)
+    await restored
+    expect(session.phase.value).toBe('report')
+    expect(session.canRefresh.value).toBe(true)
+    expect(session.errorMessage.value).toBe('暂时不可用')
+    vi.mocked(api.getClaims).mockResolvedValue({ items: [claim], total: 1, offset: 0, limit: 20 })
+    await session.resumePolling()
+    expect(session.claims.value).toEqual([claim])
+    expect(session.errorMessage.value).toBeNull()
+    expect(session.canRefresh.value).toBe(true)
+  })
+
+  it('reports a detail returned for a different task', async () => {
+    session.taskId.value = 't_test'
+    vi.mocked(api.getClaimDetail).mockResolvedValueOnce({ ...claim, task_id: 't_other' })
+    await session.loadDetail('c_test')
+    expect(session.errorMessage.value).toContain('与当前任务不匹配')
+    expect(session.details.value.c_test).toBeUndefined()
+    expect(session.activeDetail.value).toBeNull()
   })
 
   it('filters and sorts without changing the source claim order', async () => {

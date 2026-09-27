@@ -1,0 +1,163 @@
+[
+  {
+    "case_id": "complex_conditions_support",
+    "description": "复杂限定与指代保留完整语境",
+    "input_text": "截至2024年，在北京，甲公司未发布A系统。",
+    "expected": {
+      "label": "evidence_insufficient"
+    },
+    "evidence": [],
+    "functional_checks": {
+      "claim_count": 1,
+      "normalized_claim_contains": [
+        "截至2024年",
+        "在北京",
+        "未发布"
+      ]
+    }
+  },
+  {
+    "case_id": "parallel_refuted",
+    "description": "并列拆句后的第二条事实得到反证",
+    "input_text": "甲公司发布A产品，并收购乙公司。",
+    "expected": {
+      "label": "incorrect"
+    },
+    "evidence": [
+      {
+        "items": [
+          {
+            "relation": "refutes",
+            "excerpt": "合成证据夹具：乙公司并未被甲公司收购。"
+          }
+        ]
+      },
+      {
+        "items": [
+          {
+            "relation": "refutes",
+            "excerpt": "独立合成证据夹具：收购未发生。",
+            "url": "https://fixture2.example/evidence"
+          }
+        ]
+      }
+    ],
+    "functional_checks": {
+      "claim_count": 2
+    }
+  },
+  {
+    "case_id": "conflicting_evidence",
+    "description": "独立强证据相互冲突时弃判为争议",
+    "input_text": "测试机构于2024年发布了年度报告。",
+    "expected": {
+      "label": "disputed"
+    },
+    "evidence": [
+      {
+        "items": [
+          {
+            "relation": "supports",
+            "excerpt": "支持方向的合成夹具正文。"
+          }
+        ]
+      },
+      {
+        "items": [
+          {
+            "relation": "refutes",
+            "excerpt": "反对方向的合成夹具正文。",
+            "url": "https://fixture2.example/evidence"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "case_id": "insufficient_evidence",
+    "description": "弱证据不构成反证",
+    "input_text": "测试页面声称该产品已发布。",
+    "expected": {
+      "label": "evidence_insufficient"
+    },
+    "evidence": [
+      {
+        "items": [
+          {
+            "relation": "refutes",
+            "excerpt": "低质量合成摘要夹具。",
+            "authority": 0.4,
+            "quality_reason": "摘要"
+          }
+        ]
+      }
+    ],
+    "functional_checks": {
+      "evidence_insufficient_not_error": true
+    }
+  },
+  {
+    "case_id": "no_evidence",
+    "description": "无证据正文不能判错",
+    "input_text": "测试产品在2025年上市。",
+    "expected": {
+      "label": "evidence_insufficient"
+    },
+    "evidence": [],
+    "functional_checks": {
+      "evidence_insufficient_not_error": true
+    }
+  },
+  {
+    "case_id": "opinion",
+    "description": "观点不纳入事实分类",
+    "input_text": "我认为这个方案值得推荐。",
+    "expected": {
+      "label": "not_applicable"
+    },
+    "evidence": []
+  },
+  {
+    "case_id": "technical_failure",
+    "description": "检索技术失败不当作错误标签",
+    "input_text": "测试产品已发布。",
+    "expected": {
+      "label": "technical_failure"
+    },
+    "technical_failure": true,
+    "evidence": [],
+    "functional_checks": {
+      "technical_failure_unlabeled": true
+    }
+  },
+  {
+    "case_id": "reference_resolution",
+    "description": "指代消解后的第二个并列事实可单独评估",
+    "input_text": "甲公司发布A产品，并收购乙公司。",
+    "expected": {
+      "label": "credible"
+    },
+    "evidence": [
+      {
+        "items": [
+          {
+            "relation": "supports",
+            "excerpt": "合成夹具确认甲公司完成了对乙公司的收购。"
+          }
+        ]
+      },
+      {
+        "items": [
+          {
+            "relation": "supports",
+            "excerpt": "独立夹具也确认收购完成。",
+            "url": "https://fixture2.example/evidence"
+          }
+        ]
+      }
+    ],
+    "functional_checks": {
+      "claim_count": 2
+    }
+  }
+]

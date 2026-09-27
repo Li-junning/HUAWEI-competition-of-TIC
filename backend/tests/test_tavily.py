@@ -3,12 +3,14 @@ import json
 import time
 import unittest
 from threading import Event
+from datetime import datetime, timedelta, timezone
+from email.utils import format_datetime
 from unittest.mock import patch
 
 import httpx
 
 from app.providers.base import LiveProviderNotConfigured, ProviderError
-from app.providers.tavily import TavilySearchProvider
+from app.providers.tavily import TavilySearchProvider, _retry_delay
 
 
 class TavilyProviderTests(unittest.TestCase):
@@ -47,6 +49,41 @@ class TavilyProviderTests(unittest.TestCase):
         with self.assertRaises(ProviderError) as raised:
             provider.search("test")
         self.assertNotIn("do not expose", str(raised.exception))
+
+    def test_rate_limit_waits_for_provider_retry_after(self):
+        calls = []
+        sleeps = []
+        def handler(request):
+            calls.append(request)
+            if len(calls) == 1:
+                return httpx.Response(429, headers={"Retry-After": "2"})
+            return httpx.Response(200, json={"results": []})
+        provider = TavilySearchProvider(
+            api_key="tvly-test", transport=httpx.MockTransport(handler), sleep=sleeps.append)
+        self.assertEqual(provider.search("test"), [])
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(sleeps, [2.0])
+
+    def test_rate_limit_does_not_retry_before_retry_after(self):
+        calls = []
+        provider = TavilySearchProvider(
+            api_key="tvly-test",
+            transport=httpx.MockTransport(
+                lambda request: (calls.append(request) or httpx.Response(
+                    429, headers={"Retry-After": "600"}))),
+            sleep=lambda _: self.fail("must not sleep beyond the budget"))
+        with self.assertRaises(ProviderError) as raised:
+            provider.search("test")
+        self.assertEqual(raised.exception.code, "SEARCH_RATE_LIMIT")
+        self.assertEqual(len(calls), 1)
+
+    def test_retry_after_date_and_invalid_values(self):
+        when = datetime.now(timezone.utc) + timedelta(seconds=30)
+        delay = _retry_delay(httpx.Headers({"Retry-After": format_datetime(when, usegmt=True)}), 0)
+        self.assertGreater(delay, 28)
+        self.assertLessEqual(delay, 30)
+        for value in ("NaN", "inf", "bad date"):
+            self.assertGreaterEqual(_retry_delay(httpx.Headers({"Retry-After": value}), 0), 0.5)
 
     def test_absolute_deadline_bounds_slow_trickle_request(self):
         cancelled = Event()

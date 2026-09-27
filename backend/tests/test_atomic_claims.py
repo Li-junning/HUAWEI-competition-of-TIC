@@ -135,6 +135,18 @@ def test_utf16_and_budget_use_atomic_claims():
     assert claims[1].char_start == utf16_len(claims[0].source_text)
 
 
+def test_consecutive_metrics_inherit_only_the_shared_entity_and_keep_original_utf16_ranges():
+    text = '😀甲公司营收达到100亿元，净利润增长20%，并发布年度报告。'
+    claims, truncated = extract_claims(text, 't')
+    assert not truncated
+    assert [claim.normalized_claim for claim in claims] == [
+        '😀甲公司营收达到100亿元', '😀甲公司净利润增长20%', '😀甲公司发布年度报告。',
+    ]
+    raw = text.encode('utf-16-le')
+    for claim in claims:
+        assert raw[claim.char_start * 2:claim.char_end * 2].decode('utf-16-le') == claim.source_text
+
+
 @pytest.mark.parametrize('context', ['乙公司', '甲公司收购', '2025年，甲公司', '甲', ''])
 def test_untraceable_or_missing_shared_subject_is_rejected(context):
     text = '甲公司发布A产品，并收购乙公司。'

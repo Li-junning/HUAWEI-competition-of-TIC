@@ -31,6 +31,7 @@ _SUBJECT = re.compile(r"[\u3400-\u9fffA-Za-z0-9]")
 _DATE = r"\d{4}年(?:\d{1,2}月(?:\d{1,2}日)?)?"
 _TIME = re.compile(r"^(?:" + _DATE + r"|[^，,]{1,16}(?:时期|期间|年代))[，,]\s*")
 _INLINE_TIME = re.compile(r"^(?:" + _DATE + r"|[^，,]{1,16}(?:时期|期间|年代))")
+_SHARED_ATTRIBUTES = re.compile(r"^(?:营收|营业收入|收入|净利润|利润|研发投入|员工人数|用户数|销量|市值|出口额|占比|比例|产量|产能|投资额|融资额|预算)")
 
 
 def requires_joint_context(source: str) -> bool:
@@ -101,6 +102,11 @@ def _scope(prefix: str, inherited_time: str = "") -> SharedScope | None:
         return None
     parts = re.split(r"(?<=\S)(?=在|于)", rest, maxsplit=1)
     subject = parts[0].strip()
+    # Metric phrases belong to the assertion, but the organization remains
+    # the shared subject for a following metric in the same sentence.
+    metric = re.search(r"(?:营收|营业收入|收入|净利润|利润|研发投入|员工人数|用户数|销量|市值|出口额|占比|比例|产量|产能|投资额|融资额|预算)$", subject)
+    if metric and metric.start() > 0:
+        subject = subject[:metric.start()].strip()
     if not _SUBJECT.search(subject):
         return None
     return SharedScope(time, subject, parts[1] if len(parts) > 1 else "")
@@ -161,6 +167,11 @@ def split_atomic_span(span: TextSpan) -> list[TextSpan]:
                 context = scope.time + scope.subject
                 scope = SharedScope(scope.time, scope.subject, before)
             else:
+                if _SHARED_ATTRIBUTES.match(before):
+                    context = scope.prefix
+                    result.append(TextSpan(span.start + left, span.start + right, piece,
+                                           normalize_atomic_claim(piece, context)))
+                    continue
                 next_scope = _scope(before, scope.time)
                 if next_scope is None:
                     return [span]

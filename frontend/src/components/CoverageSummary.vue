@@ -23,7 +23,7 @@ const statusText: Record<TaskStatus, string> = {
       <div class="metric"><span>已抽取声明</span><strong>{{ task.claims_extracted }}</strong><small>上限 {{ task.claim_limit }}</small></div>
       <div class="metric"><span>已处理 / 未核验</span><strong>{{ task.claims_processed }} <i>/ {{ task.claims_unchecked }}</i></strong><small>含部分完成</small></div>
       <div class="metric"><span>处理覆盖率</span><strong>{{ percent(task.coverage.processing_coverage) }}</strong><small>可核验声明范围</small></div>
-      <div class="metric"><span>核验覆盖率</span><strong>{{ percent(task.coverage.verification_coverage) }}</strong><small>有充分证据的声明</small></div>
+      <div class="metric"><span>核验覆盖率</span><strong>{{ percent(task.coverage.verification_coverage) }}</strong><small>已有足够证据进行判断的声明</small></div>
       <div class="metric score-metric"><span>已判定事实平均支持指数</span><strong>{{ task.score === null ? '暂不可评估' : task.score }}</strong><small>{{ task.score_note ?? '覆盖足够且无技术失败时显示' }}</small></div>
     </div>
     <div class="label-counts" aria-label="标签统计">

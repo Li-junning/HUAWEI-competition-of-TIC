@@ -2,12 +2,12 @@
 
 import re
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Response
 from fastapi.responses import PlainTextResponse
 
 from ..export import to_json, to_markdown
 from ..pipeline import Pipeline
-from ..schemas import ClaimListResponse, CreateTaskRequest, CreateTaskResponse, TaskStatus
+from ..schemas import ClaimListResponse, CreateTaskRequest, CreateTaskResponse, EditClaimRequest, TaskStatus
 from .dependencies import PipelineDependency
 from .errors import safe_error
 
@@ -46,12 +46,44 @@ async def get_task_claims(task_id: str, pipeline: PipelineDependency, offset: in
     return ClaimListResponse(items=claims, total=total, offset=offset, limit=limit)
 
 
+@router.get("/tasks/{task_id}/input")
+async def get_task_input(task_id: str, response: Response, pipeline: PipelineDependency):
+    """Return stored text so UTF-16 claim offsets survive reloads."""
+    if not re.fullmatch(r"t_[0-9a-fA-F-]{36}", task_id):
+        raise HTTPException(status_code=404, detail="任务不存在")
+    record = pipeline.storage.get_task(task_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    response.headers["Cache-Control"] = "no-store"
+    return {"task_id": task_id, "input_text": record[0]["input_text"]}
+
+
 @router.get("/claims/{claim_id}")
 async def get_claim(claim_id: str, pipeline: PipelineDependency):
     claim = pipeline.storage.get_claim(claim_id)
     if not claim:
         raise HTTPException(status_code=404, detail="声明不存在")
     return claim
+
+
+@router.patch("/claims/{claim_id}")
+async def edit_claim(claim_id: str, request: EditClaimRequest, pipeline: PipelineDependency):
+    claim, error = pipeline.storage.edit_claim(claim_id, request.normalized_claim)
+    if error == "NOT_FOUND":
+        raise HTTPException(status_code=404, detail="声明不存在")
+    if error == "TASK_BUSY":
+        return safe_error("TASK_BUSY", "任务处理中，暂不能修改声明", 409)
+    return claim
+
+
+@router.delete("/claims/{claim_id}", status_code=204)
+async def delete_claim(claim_id: str, pipeline: PipelineDependency):
+    deleted, error = pipeline.storage.delete_claim(claim_id)
+    if error == "NOT_FOUND":
+        raise HTTPException(status_code=404, detail="声明不存在")
+    if error == "TASK_BUSY":
+        return safe_error("TASK_BUSY", "任务处理中，暂不能删除声明", 409)
+    return Response(status_code=204)
 
 
 @router.post("/claims/{claim_id}/retry", status_code=202)

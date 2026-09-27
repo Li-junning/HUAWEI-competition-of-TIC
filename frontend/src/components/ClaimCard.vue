@@ -4,9 +4,10 @@ import type { ClaimDetail, ClaimLabel, ClaimListItem, ClaimState } from '../type
 import EvidencePanel from './EvidencePanel.vue'
 import PaperCheckPanel from './PaperCheckPanel.vue'
 
-const props = defineProps<{ claim: ClaimListItem; detail: ClaimDetail | null; loading: boolean; retrying: boolean; retryDisabled?: boolean }>()
-const emit = defineEmits<{ expand: [claimId: string]; retry: [claimId: string] }>()
-const expanded = ref(false)
+const props = defineProps<{ claim: ClaimListItem; detail: ClaimDetail | null; loading: boolean; retrying: boolean; retryDisabled?: boolean; standalone?: boolean; editable?: boolean; removeDisabled?: boolean }>()
+const emit = defineEmits<{ open: [claimId: string]; retry: [claimId: string]; edit: [claimId: string, text: string]; remove: [claimId: string] }>()
+const editing = ref(false)
+const draft = ref(props.claim.normalized_claim)
 const queries = computed(() => [...new Set(props.detail?.queries ?? [])])
 const evidenceCount = computed(() => props.detail?.evidence_clusters.reduce((sum, cluster) => sum + cluster.items.length, 0))
 
@@ -24,10 +25,6 @@ const stateText: Record<ClaimState, string> = {
   done: '处理完成', failed: '处理失败，尚未核验', unchecked: '尚未核验',
 }
 
-function toggle(): void {
-  expanded.value = !expanded.value
-  if (expanded.value && !props.detail) emit('expand', props.claim.claim_id)
-}
 </script>
 
 <template>
@@ -39,17 +36,31 @@ function toggle(): void {
         <span class="label-pill" :class="labelClass(claim.label)">{{ displayLabel(claim.label) }}</span>
       </div>
       <h3>{{ claim.normalized_claim }}</h3>
+      <div v-if="claim.manually_edited" class="manual-edit-note"><b>人工修改的声明</b><span>原文（UTF-16 {{ claim.char_start }}–{{ claim.char_end }}）：{{ claim.source_text }}</span><small>修改后的文字用于检索，不是原文逐字摘录。</small></div>
+      <div v-if="editable" class="claim-review-actions">
+        <button v-if="!editing" type="button" class="text-button" @click="draft = claim.normalized_claim; editing = true">修改声明文字</button>
+        <template v-else>
+          <label class="sr-only" :for="`claim-edit-${claim.claim_id}`">修改后的声明</label>
+          <textarea :id="`claim-edit-${claim.claim_id}`" v-model="draft" maxlength="2000" rows="3"></textarea>
+          <button type="button" class="text-button" :disabled="!draft.trim()" @click="emit('edit', claim.claim_id, draft); editing = false">保存修改</button>
+          <button type="button" class="text-button" @click="editing = false">取消</button>
+        </template>
+        <button type="button" class="text-button danger-text" :disabled="removeDisabled" @click="emit('remove', claim.claim_id)">{{ removeDisabled ? '正在删除…' : '删除这条声明' }}</button>
+        <small>修改后会清除旧判断并标记为未核验；原文与位置保持不变。</small>
+      </div>
+      <p v-if="claim.label === 'evidence_insufficient'" class="claim-caution">当前材料不足以判断该声明；这不表示声明为假。</p>
+      <p v-else-if="claim.label === 'disputed' || claim.label === 'incorrect'" class="claim-caution risk">该声明存在反向或冲突证据，请重点核对来源质量与适用条件。</p>
       <p class="reason">{{ claim.reason || '尚无判断说明。' }}</p>
       <div class="claim-foot">
         <span>状态：{{ stateText[claim.state] }}</span>
         <span v-if="claim.support_score !== null">支持指数 {{ claim.support_score }}</span>
         <span v-if="claim.retry_count">已重试 {{ claim.retry_count }} 次</span>
-        <button type="button" class="text-button" :aria-expanded="expanded" :aria-controls="`detail-${claim.claim_id}`" @click="toggle">{{ expanded ? '收起详情' : '查看证据与细节' }} <span aria-hidden="true">{{ expanded ? '↑' : '↓' }}</span></button>
+        <button v-if="!standalone" type="button" class="text-button" @click="emit('open', claim.claim_id)">查看证据与细节 <span aria-hidden="true">→</span></button>
       </div>
-      <div v-if="expanded" :id="`detail-${claim.claim_id}`" class="claim-detail">
+      <div v-if="standalone" class="claim-detail">
         <div v-if="loading || retrying" class="loading-line">{{ retrying ? '正在重新检索，完成后更新证据…' : '正在读取证据…' }}</div>
         <template v-else-if="detail">
-          <div class="evidence-heading">核查证据 <span>{{ evidenceCount }} 条</span></div>
+          <div class="evidence-heading">网页检索内容 <span>{{ evidenceCount }} 条</span></div>
           <PaperCheckPanel v-if="detail.paper_check" :paper="detail.paper_check" />
           <EvidencePanel :clusters="detail.evidence_clusters" />
           <details class="retrieval-details">
@@ -60,7 +71,7 @@ function toggle(): void {
             <ol v-if="queries.length" class="query-list"><li v-for="query in queries" :key="query">{{ query }}</li></ol>
             <p v-else class="detail-row">未记录检索词。</p>
           </details>
-          <div v-if="claim.label === 'evidence_insufficient' || claim.state === 'failed'" class="retry-row">
+          <div v-if="claim.label === 'evidence_insufficient' || claim.state === 'failed' || (claim.manually_edited && claim.state === 'unchecked')" class="retry-row">
             <button type="button" class="secondary-button" :disabled="retrying || retryDisabled || claim.retry_count >= 2" @click="emit('retry', claim.claim_id)">{{ retrying ? '提交中…' : retryDisabled ? '任务处理中' : claim.retry_count >= 2 ? '已达重试上限' : '重新检索' }}</button>
             <span>剩余 {{ Math.max(0, 2 - claim.retry_count) }} 次重试</span>
           </div>

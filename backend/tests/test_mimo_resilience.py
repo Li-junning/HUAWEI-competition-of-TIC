@@ -204,6 +204,21 @@ def test_concurrency_queue_has_a_deadline_and_releases_slot(monkeypatch):
     assert len(calls) == 2
 
 
+def test_segmentation_and_judgment_share_upstream_concurrency(monkeypatch):
+    from app.providers.segmentation import MiMoSegmenter
+
+    monkeypatch.setenv("MIMO_MAX_CONCURRENCY", "1")
+    judge = mimo.MiMoEvidenceJudge(api_key="test")
+    segmenter = MiMoSegmenter(api_key="test")
+    assert judge._slots.acquire(blocking=False)
+    try:
+        with pytest.raises(JudgmentProviderError) as caught:
+            segmenter.split("Paris is in France.", deadline=time.monotonic() + 0.02)
+        assert caught.value.code == "LLM_TIMEOUT"
+    finally:
+        judge._slots.release()
+
+
 def test_configuration_is_bounded_and_rejects_nonfinite_values(monkeypatch):
     monkeypatch.setenv("MIMO_REQUEST_TIMEOUT_SECONDS", "NaN")
     monkeypatch.setenv("MIMO_TOTAL_TIMEOUT_SECONDS", "9999")

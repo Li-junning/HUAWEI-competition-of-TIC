@@ -39,6 +39,17 @@ TRANSIENT_ERRORS = {"LLM_TIMEOUT", "LLM_CONNECTION", "LLM_RATE_LIMIT", "LLM_UNAV
 RECOVERABLE_OUTPUT_ERRORS = {"LLM_TRUNCATED", "LLM_REPETITION", "LLM_EMPTY", "LLM_RESPONSE", "LLM_JSON", "LLM_SCHEMA"}
 
 
+_slot_lock = threading.Lock()
+_slot_pools: dict[int, threading.BoundedSemaphore] = {}
+
+
+def _shared_slots(concurrency: int) -> threading.BoundedSemaphore:
+    # Segmentation and judgment use the same upstream account and model.
+    # Create each process-wide limit atomically, including concurrent startup.
+    with _slot_lock:
+        return _slot_pools.setdefault(concurrency, threading.BoundedSemaphore(concurrency))
+
+
 def _bounded_number_env(name: str, default: float, minimum: float, maximum: float) -> float:
     try:
         value = float(os.environ[name])
@@ -87,7 +98,7 @@ class MiMoEvidenceJudge:
         self._total_timeout = _bounded_number_env("MIMO_TOTAL_TIMEOUT_SECONDS", TOTAL_TIMEOUT_SECONDS, 10, 180)
         self._max_tokens = int(_bounded_number_env("MIMO_MAX_COMPLETION_TOKENS", MAX_COMPLETION_TOKENS, 256, MAX_RECOVERY_TOKENS))
         concurrency = int(_bounded_number_env("MIMO_MAX_CONCURRENCY", 2, 1, 3))
-        self._slots = threading.BoundedSemaphore(concurrency)
+        self._slots = _shared_slots(concurrency)
 
     def judge(self, claim: Any, clusters: Sequence[Any]) -> None:
         self.judge_with_deadline(claim, clusters)

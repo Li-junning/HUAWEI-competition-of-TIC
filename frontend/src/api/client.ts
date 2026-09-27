@@ -54,12 +54,26 @@ export function getClaims(taskId: string): Promise<ClaimPage> {
   return requestJson<ClaimPage>(`/tasks/${encodeURIComponent(taskId)}/claims?offset=0&limit=20`)
 }
 
+export function getTaskInput(taskId: string): Promise<{ task_id: string; input_text: string }> {
+  return requestJson<{ task_id: string; input_text: string }>(`/tasks/${encodeURIComponent(taskId)}/input`)
+}
+
 export function getClaimDetail(claimId: string): Promise<ClaimDetail> {
   return requestJson<ClaimDetail>(`/claims/${encodeURIComponent(claimId)}`)
 }
 
 export function retryClaim(claimId: string): Promise<ClaimListItemResponse> {
   return requestJson<ClaimListItemResponse>(`/claims/${encodeURIComponent(claimId)}/retry`, { method: 'POST' })
+}
+
+export function editClaim(claimId: string, normalizedClaim: string): Promise<ClaimDetail> {
+  return requestJson<ClaimDetail>(`/claims/${encodeURIComponent(claimId)}`, {
+    method: 'PATCH', body: JSON.stringify({ normalized_claim: normalizedClaim }),
+  })
+}
+
+export function deleteClaim(claimId: string): Promise<void> {
+  return requestJson<void>(`/claims/${encodeURIComponent(claimId)}`, { method: 'DELETE' })
 }
 
 export function exportUrl(taskId: string, format: 'json' | 'md'): string {

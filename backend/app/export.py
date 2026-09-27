@@ -58,7 +58,9 @@ def to_markdown(summary: TaskSummary, claims: list[Claim]) -> str:
              f"- 运行规则版本：`heuristic-v1`", "", "## 声明"]
     for claim in claims:
         lines += ["", f"### {_text(claim.normalized_claim)}", f"- 标签：`{claim.label.value if claim.label else 'unknown'}`",
-                  f"- 原文：{_text(claim.source_text)}", f"- 支持指数：{claim.support_score if claim.support_score is not None else 'null'}",
+                  f"- 声明来源：{'人工修改；以下检索文字并非原文逐字内容' if claim.manually_edited else '系统抽取'}",
+                  f"- 原文片段（UTF-16 {claim.char_start}–{claim.char_end}）：{_text(claim.source_text)}",
+                  f"- 支持指数：{claim.support_score if claim.support_score is not None else 'null'}",
                   f"- 原因：{_text(claim.reason)}"]
         for cluster in claim.evidence_clusters:
             for item in cluster.items:

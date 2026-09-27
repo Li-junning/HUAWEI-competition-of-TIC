@@ -7,6 +7,7 @@ import re
 from .schemas import Claim, ClaimLabel, ClaimState, new_id
 from .text_processing import TextSpan
 from .claim_segmentation import atomic_spans
+from .reference_resolution import has_unresolved_reference, resolve_references
 
 
 def utf16_len(value: str) -> int:
@@ -33,6 +34,7 @@ def _kind(sentence: str) -> tuple[str, bool]:
 def extract_claims(text: str, task_id: str, limit: int = 15, *, spans: list[TextSpan] | None = None) -> tuple[list[Claim], bool]:
     """Split conservatively; offsets are UTF-16 half-open offsets in original text."""
     spans = atomic_spans(text) if spans is None else spans
+    spans = resolve_references(text, spans)
     truncated = len(spans) > limit
     claims: list[Claim] = []
     for span in spans[:limit]:
@@ -44,6 +46,9 @@ def extract_claims(text: str, task_id: str, limit: int = 15, *, spans: list[Text
             entities=_entities(span.normalized), conditions=_conditions(span.normalized),
             label=None if verifiable else ClaimLabel.NOT_APPLICABLE,
         )
+        if has_unresolved_reference(span.source, span.normalized):
+            claim.state = ClaimState.UNCHECKED
+            claim.reason = "“该学科”的指代对象无法从相邻原文唯一确定，未进行检索核验。"
         claims.append(claim)
     return claims, truncated
 
