@@ -64,6 +64,14 @@ describe('verification session', () => {
     expect(session.phase.value).toBe('input')
   })
 
+  it('clears the previous input when starting a new task', async () => {
+    await session.submit()
+    expect(session.text.value).not.toBe('')
+    session.startOver()
+    expect(session.text.value).toBe('')
+    expect(session.phase.value).toBe('input')
+  })
+
   it('polls to completion, displays claims and exports the report', async () => {
     vi.mocked(api.getTask).mockResolvedValueOnce({ ...summary, status: 'running' })
     const pending = session.submit()

@@ -341,6 +341,7 @@ export function useVerificationTask() {
   function startOver(): void {
     setPolling(false)
     pollGeneration += 1
+    text.value = ''
     taskId.value = null
     task.value = null
     claims.value = []
