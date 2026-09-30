@@ -20,6 +20,8 @@ from .schemas import EvidenceItem as ApiEvidenceItem
 from .schemas import EvidenceRelation
 from .text_processing import candidate_spans, query_terms
 from .source_policy import source_allowed, source_profile
+from .fact_queries import causal_query, fact_slot
+from .claim_segmentation import atomic_spans
 
 
 def normalize_text(value: str) -> str:
@@ -159,7 +161,8 @@ def _contains_part(parts: Sequence[str], value: str) -> bool:
 
 def _neutral_action(action: str, anchors: Sequence[str], value: str = "") -> str:
     """Remove answer-like values while preserving negation and scope wording."""
-    neutral = action
+    slot = fact_slot(action)
+    neutral = slot.query if slot else causal_query(action) or action
     # Turn directional/comparative answers into properties to look up. Keep
     # subjects and conditions, and never insert a presumed correct answer.
     neutral = re.sub(r"(?:自|从|由)[东南西北](?:方)?(?:向|往|到|至)[东南西北](?:方)?", "方向", neutral)
@@ -206,6 +209,14 @@ def _retrieval_queries(claim) -> list[RetrievalQuery]:
                             action=claim.normalized_claim, conditions=claim.conditions)
     if not queries:
         return []
+    parts = atomic_spans(claim.normalized_claim)
+    if len(parts) > 1:
+        focused = []
+        for part in parts:
+            variants = build_queries(claim.claim_id, action=part.normalized)
+            focused.append(variants[1] if len(variants) > 1 else variants[0])
+        # Spend the same three-query budget on fact coverage before source discovery.
+        return ([queries[0], *focused] if len(focused) == 2 else focused)[:3]
     topic = queries[1].query if len(queries) > 1 else queries[0].query
     # Reserve one of the existing three calls for source discovery. Ordinary
     # searches remain available so an allowlist cannot decide the answer.
@@ -244,9 +255,16 @@ def _subject_matches(body: str, claim_text: str) -> bool:
 
 
 def _usable_excerpt(item: EvidenceItem, topic: str, claim_text: str) -> bool:
-    coverage, hits = _topic_coverage(item.excerpt, topic)
-    if coverage < .3 or hits < 1:
-        return False
+    slot = fact_slot(claim_text)
+    if slot:
+        # Matching the entity alone does not verify its requested property.
+        # A different answer (place, date, category) must remain retrievable.
+        if not slot.matches(item.excerpt):
+            return False
+    else:
+        coverage, hits = _topic_coverage(item.excerpt, topic)
+        if coverage < .3 or hits < 1:
+            return False
     # A search title alone is not evidence; navigation/error pages are not
     # promoted even when their title exactly repeats the target assertion.
     body = normalize_text(item.excerpt)
@@ -361,8 +379,9 @@ def _relevant_excerpt(text: str, title: str = "", snippet: str = "") -> str:
     if not candidates:
         candidates = [(pos, min(pos + 1000, len(text))) for pos in range(0, len(text), 750)]
     template_terms = {"首页", "登录", "注册", "目录", "cookie", "导航", "菜单", "分享", "搜索", "版权"}
+    slot = fact_slot(title)
 
-    def score(window: tuple[int, int]) -> tuple[float, float, int, int, int]:
+    def score(window: tuple[int, int]) -> tuple[int, float, float, int, int, int]:
         start, end = window
         body = text[start:end].casefold()
         def weighted(found: set[str]) -> float:
@@ -378,7 +397,7 @@ def _relevant_excerpt(text: str, title: str = "", snippet: str = "") -> str:
         complete = 1 if end < len(text) and text[end - 1:end] in "。！？!?；;" else 0
         # The anchor is the retrieval target; a verbose provider snippet can
         # only break ties after primary topic coverage has been compared.
-        return primary_coverage, secondary_coverage, phrase, complete, -template_penalty
+        return (slot.match_strength(body) if slot else 0), primary_coverage, secondary_coverage, phrase, complete, -template_penalty
 
     start, end = max(candidates, key=score)
     # A short sentence that begins with a pronoun benefits from one adjacent
@@ -454,6 +473,8 @@ class SearchBackedRetriever:
             return []
         claim.queries = []
         topic = queries[1].query if len(queries) > 1 and "site:" not in queries[1].query and not queries[1].query.endswith("官方 原始资料") else queries[0].query
+        parts = atomic_spans(claim.normalized_claim)
+        targets = [(part.normalized, _neutral_action(part.normalized, ())) for part in parts] if len(parts) > 1 else [(claim.normalized_claim, topic)]
         candidates: list[SearchResult] = []
         provider_errors = 0
         last_error: ProviderError | None = None
@@ -499,14 +520,15 @@ class SearchBackedRetriever:
         )
         for candidate in candidates:
             try:
-                item = fetch_result(candidate, client=self._safe_client, evidence_id=f"e_{len(evidence)+1}", anchor=topic)
+                anchor = max((t for _, t in targets), key=lambda t: _topic_coverage(candidate.content or candidate.snippet, t))
+                item = fetch_result(candidate, client=self._safe_client, evidence_id=f"e_{len(evidence)+1}", anchor=anchor)
             except SecurityError:
                 continue
             if not source_allowed(item.url, claim.normalized_claim, item.title):
                 continue
             if item.url in seen_urls:
                 continue
-            if not _usable_excerpt(item, topic, claim.normalized_claim):
+            if not any(_usable_excerpt(item, target, part) for part, target in targets):
                 continue
             seen_urls.add(item.url)
             if candidate.metadata.get("content_kind") == "search_snippet":
@@ -522,16 +544,25 @@ class SearchBackedRetriever:
             # repeated navigation label cannot outweigh a body containing the
             # claim's subject, metric, and date. Numeric disagreement remains
             # a possible refutation and is never filtered here.
-            relevance, _ = _topic_coverage(item.excerpt, topic)
+            relevance = max(_topic_coverage(item.excerpt, target)[0] for _, target in targets)
             quality = 1 if source_kind(item) == "body" else 0
+            property_match = max((slot.match_strength(item.excerpt) if (slot := fact_slot(part)) else 0)
+                                 for part, _ in targets)
             # Only relevant pages reach this stage. Full bodies first, then
             # balance coverage with source priors instead of keyword stuffing.
-            return (quality, .6 * relevance + .4 * _source_authority(item.url), relevance)
+            return (quality, property_match, .6 * relevance + .4 * _source_authority(item.url), relevance)
         clusters = cluster_evidence(evidence)
         selected = [max(cluster.items, key=rank) for cluster in clusters]
         selected_ids = {id(item) for item in selected}
         remainder = [item for item in evidence if id(item) not in selected_ids]
-        evidence = sorted(selected, key=rank, reverse=True)[:self.max_evidence]
+        ranked = sorted(selected, key=rank, reverse=True)
+        evidence = []
+        if len(targets) > 1:
+            for part, target in targets:
+                best = next((item for item in ranked if _usable_excerpt(item, target, part)), None)
+                if best is not None and best not in evidence:
+                    evidence.append(best)
+        evidence = (evidence + [item for item in ranked if item not in evidence])[:self.max_evidence]
         if len(evidence) < self.max_evidence:
             evidence.extend(sorted(remainder, key=rank, reverse=True)[:self.max_evidence-len(evidence)])
 

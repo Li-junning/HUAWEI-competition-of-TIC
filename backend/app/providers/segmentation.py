@@ -60,13 +60,15 @@ def validated_spans(text: str, segments: list[str | SemanticSegment]) -> list[Te
                     or (expected is None and not prior.startswith(context))):
                 raise JudgmentProviderError("LLM_SCHEMA")
         # Do not turn a negation/conditional/report into an unconditional fact.
-        if parent and requires_joint_context(parent.source) and (cursor != parent.start or end < parent.end):
+        if parent and requires_joint_context(parent.source) and (cursor != parent.start or end < parent.end) and expected is None:
             raise JudgmentProviderError("LLM_SCHEMA")
         if re.fullmatch(r"[^，,]{1,20}(?:时期|期间|年代|年)[，,]", source):
             raise JudgmentProviderError("LLM_SCHEMA")
         is_atomic_part = expected is not None and parent is not None and expected.source != parent.source
         normalized = (normalize_atomic_claim(source, context)
                       if context or is_atomic_part else normalize_claim(source))
+        if is_atomic_part and not context and re.match(r"^[它他她其](?!们)", source):
+            normalized = expected.normalized
         if is_claim_candidate(source, normalized):
             span = TextSpan(cursor, end, source, normalized)
             # Also refine a model that returns a valid but coarse whole sentence.
@@ -118,7 +120,9 @@ class MiMoSegmenter(MiMoEvidenceJudge):
                     "不能包含已经完成的另一个事实，不能从其他句子借用信息。主体变化时不要继承旧主语。"
                     "若同句中途已明确更换主语，后续省略主语的动作可复制新主语所在的连续原文前缀。"
                     "出现新的时间或地点时，不要同时拼入被替代的旧时间或地点；无法用连续原文完整保留限定就保留整句。"
-                    "条件、否定、转折、因果、比较、推测、引述或指代不明的复杂句保留完整，不强拆；不要把时间短语单独作为事实。"
+                    "条件、否定、转折、因果、比较、推测、引述关系必须完整保留在其所属声明内；不要把时间短语单独作为事实。"
+                    "某一分句含因果关系，不代表整句不可拆：完整因果事实之后的独立地点、时间、属性或动作仍应拆开。"
+                    "同句代词只有在主语唯一且没有竞争指代对象时才可拆分，context 复制其主语；source 仍保留原代词。指代不明保留整句。"
                     "名词列表、人物组合、书名、数值单位不能拆开。只拆声明，不判断真伪，不纠正错误，不概括或翻译。"
                     "所有 source 按顺序完整覆盖原文（包括标题、建议、标点），段间仅可省略空白。标题独立成段。"
                     '只输出 {"segments":[{"source":"连续原文","context":"共享前缀或空串"}]}。'

@@ -27,7 +27,9 @@ class MiMoJudgeTests(unittest.TestCase):
             captured["headers"] = request.headers
             captured["body"] = json.loads(request.content)
             content = json.dumps({"decisions": [{
-                "evidence_id": "e_1", "relation": "refutes", "excerpt": "首都是北京", "reason": "证据明确给出不同首都。"
+                "evidence_id": "e_1", "relation": "refutes", "excerpt": "首都是北京", "reason": "证据明确给出不同首都。",
+                "checks": [{"part_id": 1, "relation": "refutes", "excerpt": "中华人民共和国首都是北京。",
+                            "alignment": {"entity": "match", "predicate": "match", "scope": "match", "value": "conflict"}}]
             }]})
             return httpx.Response(200, json={"choices": [{"message": {"content": content}}]})
 

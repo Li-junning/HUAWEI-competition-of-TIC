@@ -79,7 +79,7 @@ watch(mergeId, () => {
       <p>在下方原文中选中遗漏的完整片段，系统会自动记录位置。</p>
       <textarea ref="sourceField" class="review-source-field" :value="text" readonly rows="5" aria-label="选中要补充的原文片段" @select="captureAddSelection" @mouseup="captureAddSelection" @keyup="captureAddSelection"></textarea>
       <small>选区 {{ addStart }}–{{ addEnd }}：{{ selection || '尚未选择' }}</small>
-      <label>声明文字<input v-model="addWording" maxlength="2000" placeholder="填写需要核验的事实声明" /></label>
+      <label>声明文字<textarea v-model="addWording" class="review-wording-field" rows="3" wrap="soft" maxlength="2000" placeholder="填写需要核验的事实声明"></textarea></label>
       <button type="button" class="primary-button small" :disabled="busy || disabled || claims.length >= limit || addEnd <= addStart || !addWording.trim()" @click="emit('add', addStart, addEnd, addWording.trim())">补充声明</button>
       <small v-if="claims.length >= limit">当前已达到 {{ limit }} 条声明上限；可先合并或删除。</small>
     </div>
@@ -89,15 +89,15 @@ watch(mergeId, () => {
         <p>在下方原文中点击两条声明的分界位置，再检查拆分后的文字。</p>
         <textarea ref="splitField" class="review-source-field" :value="selectedSplit.source_text" readonly rows="3" aria-label="点击断句位置" @click="captureSplitPosition" @keyup="captureSplitPosition" @select="captureSplitPosition"></textarea>
         <small>分界位置：{{ splitPosition || '尚未选择' }}</small>
-        <label>第一条声明<input v-model="splitFirst" maxlength="2000" /></label>
-        <label>第二条声明<input v-model="splitSecond" maxlength="2000" /></label>
+        <label>第一条声明<textarea v-model="splitFirst" class="review-wording-field" rows="3" wrap="soft" maxlength="2000"></textarea></label>
+        <label>第二条声明<textarea v-model="splitSecond" class="review-wording-field" rows="3" wrap="soft" maxlength="2000"></textarea></label>
         <button type="button" class="primary-button small" :disabled="busy || disabled || claims.length >= limit || splitPosition <= selectedSplit.char_start || splitPosition >= selectedSplit.char_end || !splitFirst.trim() || !splitSecond.trim()" @click="emit('split', selectedSplit.claim_id, splitPosition, splitFirst.trim(), splitSecond.trim())">确认拆分</button>
       </template>
     </div>
     <div v-else class="review-form">
       <label>选择第一条声明<select v-model="mergeId"><option value="">请选择</option><option v-for="claim in ordered.slice(0, -1)" :key="claim.claim_id" :value="claim.claim_id">{{ claim.char_start }}–{{ claim.char_end }} · {{ claim.normalized_claim }}</option></select></label>
       <p v-if="mergeNext">将与下一条合并：{{ mergeNext.normalized_claim }}</p>
-      <label v-if="mergeNext">合并后的声明<input v-model="mergeWording" maxlength="2000" /></label>
+      <label v-if="mergeNext">合并后的声明<textarea v-model="mergeWording" class="review-wording-field" rows="3" wrap="soft" maxlength="2000"></textarea></label>
       <button type="button" class="primary-button small" :disabled="busy || disabled || !mergeId || !mergeNext || !mergeWording.trim()" @click="emit('merge', [mergeId, mergeNext!.claim_id], mergeWording.trim())">确认合并</button>
     </div>
     <details class="review-history">

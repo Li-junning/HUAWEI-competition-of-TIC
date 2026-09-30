@@ -28,12 +28,14 @@ export function useVerificationTask() {
   let pollStartedAt = 0
   let pollGeneration = 0
   let detailRequestToken = 0
+  let reviewRequestToken = 0
+  let historyRequestToken = 0
   const detailTokens = new Map<string, number>()
   const claimSignatures = new Map<string, string>()
 
   const isTerminal = (status: TaskStatus): boolean => ['succeeded', 'partial', 'failed', 'interrupted'].includes(status)
   const canExport = computed(() => task.value?.status === 'succeeded' || task.value?.status === 'partial')
-  const canRefresh = computed(() => taskId.value !== null && !pollingState.value)
+  const canRefresh = computed(() => taskId.value !== null && !pollingState.value && !reviewBusy.value)
 
   function explainError(error: unknown): string {
     return error instanceof ApiError ? error.message : '发生未知错误，请稍后重试。'
@@ -108,6 +110,10 @@ export function useVerificationTask() {
     detailTokens.clear()
     claimSignatures.clear()
     retryingClaim.value = null
+    removingClaim.value = null
+    reviewBusy.value = false
+    reviewRequestToken += 1
+    historyRequestToken += 1
     reviewHistory.value = []
   }
 
@@ -128,7 +134,7 @@ export function useVerificationTask() {
         if (isTerminal(current.status)) {
           setPolling(false)
           phase.value = 'report'
-          void loadReviewHistory(id)
+          void loadReviewHistory(id, generation)
           return
         }
       } catch (error: unknown) {
@@ -211,7 +217,7 @@ export function useVerificationTask() {
   }
 
   async function retry(claimId: string): Promise<void> {
-    if (retryingClaim.value || phase.value === 'processing' || task.value?.status === 'running' || task.value?.status === 'created') return
+    if (retryingClaim.value || reviewBusy.value || phase.value === 'processing' || task.value?.status === 'running' || task.value?.status === 'created') return
     const generation = ++pollGeneration
     const id = taskId.value
     retryingClaim.value = claimId
@@ -239,49 +245,88 @@ export function useVerificationTask() {
   }
 
   async function refreshAfterReviewChange(id: string, generation: number): Promise<void> {
-    const [current, page, history] = await Promise.all([getTask(id), getClaims(id), getReviewHistory(id)])
+    const historyToken = ++historyRequestToken
+    const isCurrent = () => isTaskCurrent(id, generation)
+    const [current, page, history] = await Promise.allSettled([
+      getWithRetry(() => getTask(id), isCurrent),
+      getWithRetry(() => getClaims(id), isCurrent),
+      getWithRetry(() => getReviewHistory(id), isCurrent),
+    ])
     if (!isTaskCurrent(id, generation)) return
-    task.value = current
-    claims.value = page.items
-    reviewHistory.value = history.items
-    details.value = {}
-    claimSignatures.clear()
-    for (const item of page.items) claimSignatures.set(item.claim_id, JSON.stringify([item.state, item.evidence_cluster_ids]))
+    if (current.status === 'fulfilled') task.value = current.value
+    if (page.status === 'fulfilled') {
+      claims.value = page.value.items
+      claimSignatures.clear()
+      for (const item of page.value.items) claimSignatures.set(item.claim_id, JSON.stringify([item.state, item.evidence_cluster_ids]))
+    }
+    if (history.status === 'fulfilled' && historyToken === historyRequestToken) reviewHistory.value = history.value.items
+    const failed = [current, page, history].find(result => result.status === 'rejected')
+    if (failed?.status === 'rejected') {
+      errorMessage.value = `复核操作已保存，但部分结果暂未刷新：${explainError(failed.reason)} 请返回报告并点击“刷新结果”，无需重复提交。`
+    }
   }
 
-  async function loadReviewHistory(id: string): Promise<void> {
+  async function loadReviewHistory(id: string, generation: number): Promise<void> {
+    const token = ++historyRequestToken
+    const isCurrent = () => isTaskCurrent(id, generation) && token === historyRequestToken
     try {
-      const history = await getReviewHistory(id)
-      if (id === taskId.value) reviewHistory.value = history.items
-    } catch (error: unknown) { if (id === taskId.value) errorMessage.value = explainError(error) }
+      const history = await getWithRetry(() => getReviewHistory(id), isCurrent)
+      if (isCurrent()) reviewHistory.value = history.items
+    } catch (error: unknown) {
+      if (isCurrent() && !errorMessage.value) {
+        errorMessage.value = `复核历史暂未加载：${explainError(error)} 可点击“刷新结果”重试。`
+      }
+    }
   }
 
   async function runReview(operation: (id: string) => Promise<unknown>): Promise<boolean> {
     const id = taskId.value
-    if (!id || reviewBusy.value || task.value?.status === 'running' || task.value?.status === 'created') return false
-    const generation = pollGeneration
+    if (!id || reviewBusy.value || retryingClaim.value || task.value?.status === 'running' || task.value?.status === 'created') return false
+    const generation = ++pollGeneration
+    const token = ++reviewRequestToken
+    setPolling(false)
+    historyRequestToken += 1
     reviewBusy.value = true
     errorMessage.value = null
     try {
       await operation(id)
+      if (!isTaskCurrent(id, generation) || token !== reviewRequestToken) return false
+      // The write succeeded. Invalidate evidence before attempting recoverable GETs.
+      details.value = {}
+      activeDetail.value = null
+      detailRequestToken += 1
+      detailTokens.clear()
       await refreshAfterReviewChange(id, generation)
       return isTaskCurrent(id, generation)
-    } catch (error: unknown) { errorMessage.value = explainError(error); return false }
-    finally { reviewBusy.value = false }
+    } catch (error: unknown) {
+      if (isTaskCurrent(id, generation) && token === reviewRequestToken) errorMessage.value = explainError(error)
+      return false
+    } finally {
+      if (token === reviewRequestToken) reviewBusy.value = false
+    }
   }
 
   async function editClaimText(claimId: string, normalizedClaim: string, reviewer: string): Promise<void> {
     if (!normalizedClaim.trim()) return
     const changed = await runReview(() => editClaimRequest(claimId, normalizedClaim.trim(), reviewer))
-    if (changed && taskId.value) await loadDetail(claimId)
+    if (changed && taskId.value && !errorMessage.value) {
+      const id = taskId.value
+      const generation = pollGeneration
+      await loadDetail(claimId)
+      if (isTaskCurrent(id, generation) && errorMessage.value) {
+        errorMessage.value = `复核操作已保存，但声明详情暂未加载：${errorMessage.value} 可点击“重新加载”重试，无需重复提交。`
+      }
+    }
   }
 
   async function removeClaim(claimId: string, reviewer: string): Promise<void> {
     const id = taskId.value
     if (!id || removingClaim.value) return
     removingClaim.value = claimId
-    try { await runReview(() => deleteClaimRequest(claimId, reviewer)) }
-    finally { if (removingClaim.value === claimId) removingClaim.value = null }
+    const pending = runReview(() => deleteClaimRequest(claimId, reviewer))
+    const token = reviewRequestToken
+    try { await pending }
+    finally { if (token === reviewRequestToken && removingClaim.value === claimId) removingClaim.value = null }
   }
 
   async function addManualClaim(start: number, end: number, wording: string, reviewer: string): Promise<boolean> {
@@ -302,7 +347,7 @@ export function useVerificationTask() {
 
   async function resumePolling(): Promise<void> {
     const id = taskId.value
-    if (!id || polling) return
+    if (!id || polling || reviewBusy.value) return
     const generation = ++pollGeneration
     errorMessage.value = null
     setPolling(true)
@@ -324,7 +369,7 @@ export function useVerificationTask() {
       task.value = current
       await refreshClaims(id, generation)
       if (generation !== pollGeneration || id !== taskId.value) return
-      if (isTerminal(current.status)) { phase.value = 'report'; void loadReviewHistory(id) }
+      if (isTerminal(current.status)) { phase.value = 'report'; void loadReviewHistory(id, generation) }
       else {
         phase.value = 'processing'
         pollStartedAt = Date.now()
@@ -351,6 +396,10 @@ export function useVerificationTask() {
     detailTokens.clear()
     claimSignatures.clear()
     retryingClaim.value = null
+    removingClaim.value = null
+    reviewBusy.value = false
+    reviewRequestToken += 1
+    historyRequestToken += 1
     reviewHistory.value = []
     errorMessage.value = null
     formError.value = null

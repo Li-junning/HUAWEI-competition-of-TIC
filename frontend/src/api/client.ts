@@ -1,4 +1,4 @@
-import type { ApiErrorBody, ClaimDetail, ClaimPage, ReviewEvent, TaskCreated, TaskSummary, ServiceStatus } from '../types/api'
+import type { ClaimDetail, ClaimPage, ReviewEvent, TaskCreated, TaskSummary, ServiceStatus } from '../types/api'
 
 const API_PREFIX = '/api'
 
@@ -14,30 +14,68 @@ export class ApiError extends Error {
   }
 }
 
-async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+async function responseError(response: Response): Promise<ApiError> {
+  const raw: unknown = await response.json().catch(() => null)
+  const error = isRecord(raw) && isRecord(raw.error) ? raw.error : null
+  const message = typeof error?.message === 'string' && error.message.trim()
+    ? error.message : `请求失败（${response.status}）`
+  const code = typeof error?.code === 'string' && error.code.trim() ? error.code : null
+  return new ApiError(message, response.status, code)
+}
+
+/** Keep the deadline active until the complete response body has been read. */
+async function request<T>(url: string, init: RequestInit, read: (response: Response) => Promise<T>): Promise<T> {
   const controller = new AbortController()
-  const timeout = window.setTimeout(() => controller.abort(), 20_000)
+  const timeout = globalThis.setTimeout(() => controller.abort(), 20_000)
   try {
-    const response = await fetch(`${API_PREFIX}${path}`, {
+    const response = await fetch(url, {
       ...init,
       signal: controller.signal,
-      headers: { Accept: 'application/json', 'Content-Type': 'application/json', ...init.headers },
     })
-    const raw: unknown = await response.json().catch(() => null)
     if (!response.ok) {
-      const body = (raw ?? {}) as ApiErrorBody
-      throw new ApiError(body.error?.message ?? `请求失败（${response.status}）`, response.status, body.error?.code ?? null)
+      const error = await responseError(response)
+      if (controller.signal.aborted) throw new DOMException('Request timed out', 'AbortError')
+      throw error
     }
-    return raw as T
+    return await read(response)
   } catch (error: unknown) {
     if (error instanceof ApiError) throw error
-    if (error instanceof DOMException && error.name === 'AbortError') {
+    if (controller.signal.aborted || (error instanceof Error && error.name === 'AbortError')) {
       throw new ApiError('请求超时，请稍后重试。', 408, 'REQUEST_TIMEOUT')
     }
     throw new ApiError('网络暂时不可用，请检查后端服务后重试。', 0, 'NETWORK_ERROR')
   } finally {
-    window.clearTimeout(timeout)
+    globalThis.clearTimeout(timeout)
   }
+}
+
+async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const headers = new Headers(init.headers)
+  if (!headers.has('Accept')) headers.set('Accept', 'application/json')
+  if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
+  return request(`${API_PREFIX}${path}`, { ...init, headers }, async response => {
+    if (response.status === 204 && init.method === 'DELETE') return undefined as T
+    let raw: unknown
+    try {
+      raw = await response.json()
+    } catch (error: unknown) {
+      if (!(error instanceof SyntaxError)) throw error
+      throw new ApiError('服务返回的数据格式异常，请稍后重试。', response.status, 'INVALID_RESPONSE')
+    }
+    if (!isRecord(raw) && !Array.isArray(raw)) {
+      throw new ApiError('服务返回的数据格式异常，请稍后重试。', response.status, 'INVALID_RESPONSE')
+    }
+    return raw as T
+  })
+}
+
+/** Read a binary API response with the same timeout and errors as JSON requests. */
+export function requestBlob(url: string, init: RequestInit = {}): Promise<Blob> {
+  return request(url, init, response => response.blob())
 }
 
 export function createTask(inputText: string): Promise<TaskCreated> {

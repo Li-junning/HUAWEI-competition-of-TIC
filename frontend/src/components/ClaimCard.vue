@@ -4,7 +4,7 @@ import type { ClaimDetail, ClaimLabel, ClaimListItem, ClaimState } from '../type
 import EvidencePanel from './EvidencePanel.vue'
 import PaperCheckPanel from './PaperCheckPanel.vue'
 
-const props = defineProps<{ claim: ClaimListItem; detail: ClaimDetail | null; loading: boolean; retrying: boolean; retryDisabled?: boolean; standalone?: boolean; editable?: boolean; removeDisabled?: boolean }>()
+const props = defineProps<{ claim: ClaimListItem; detail: ClaimDetail | null; loading: boolean; retrying: boolean; retryDisabled?: boolean; standalone?: boolean; editable?: boolean; reviewDisabled?: boolean; removeDisabled?: boolean }>()
 const emit = defineEmits<{ open: [claimId: string]; retry: [claimId: string]; edit: [claimId: string, text: string]; remove: [claimId: string] }>()
 const editing = ref(false)
 const draft = ref(props.claim.normalized_claim)
@@ -43,14 +43,14 @@ const stateText: Record<ClaimState, string> = {
           <span>断句或表述需要调整时，可在这里处理</span>
         </div>
         <div v-if="!editing" class="claim-review-buttons">
-          <button type="button" class="claim-action-button claim-action-edit" @click="draft = claim.normalized_claim; editing = true"><span aria-hidden="true">✎</span> 修改声明</button>
-          <button type="button" class="claim-action-button claim-action-delete" :disabled="removeDisabled" @click="emit('remove', claim.claim_id)"><span aria-hidden="true">×</span> {{ removeDisabled ? '正在删除…' : '删除声明' }}</button>
+          <button type="button" class="claim-action-button claim-action-edit" :disabled="reviewDisabled" @click="draft = claim.normalized_claim; editing = true"><span aria-hidden="true">✎</span> 修改声明</button>
+          <button type="button" class="claim-action-button claim-action-delete" :disabled="removeDisabled || reviewDisabled" @click="emit('remove', claim.claim_id)"><span aria-hidden="true">×</span> {{ removeDisabled ? '正在删除…' : '删除声明' }}</button>
         </div>
         <div v-else class="claim-review-editor">
           <label :for="`claim-edit-${claim.claim_id}`">修改后的声明</label>
-          <textarea :id="`claim-edit-${claim.claim_id}`" v-model="draft" maxlength="2000" rows="3"></textarea>
+          <textarea :id="`claim-edit-${claim.claim_id}`" v-model="draft" :disabled="reviewDisabled" maxlength="2000" rows="3"></textarea>
           <div class="claim-review-buttons">
-            <button type="button" class="claim-action-button claim-action-edit" :disabled="!draft.trim()" @click="emit('edit', claim.claim_id, draft); editing = false">保存修改</button>
+            <button type="button" class="claim-action-button claim-action-edit" :disabled="reviewDisabled || !draft.trim()" @click="emit('edit', claim.claim_id, draft); editing = false">保存修改</button>
             <button type="button" class="claim-action-button claim-action-cancel" @click="editing = false">取消</button>
           </div>
         </div>

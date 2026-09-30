@@ -24,6 +24,9 @@ _VERBS = (
     "签署", "签订", "割让", "宣布", "发布", "成立", "出生", "毕业", "位于", "属于",
     "拥有", "获得", "收购", "推出", "支持", "采用", "使用", "建成", "开通", "达到",
     "超过", "增长", "下降", "增加", "减少", "担任", "加入", "迁至", "迁往", "研发",
+    "流入", "注入", "汇入", "流经", "发源于", "得名", "组成", "构成", "自转", "公转",
+    "产生", "释放", "吸收", "携带", "形成", "分布", "诞生", "逝世", "获奖",
+    "创立", "创办", "始建",
 )
 _ACTION = re.compile("|".join(_VERBS))
 _CONNECTOR = re.compile(r"^(?:并且|而且|同时|并|且|也|还)")
@@ -66,6 +69,10 @@ def _predicate(source: str) -> re.Match | None:
 def normalize_atomic_claim(source: str, context: str = "") -> str:
     """Remove clause joiners only in the derived claim; offsets stay verbatim."""
     body = _strip_connector(source.strip())
+    if context and re.match(r"^[它他她](?!们)", body):
+        body = body[1:]
+    elif context and body.startswith("其"):
+        body = "的" + body[1:]
     return normalize_claim(context + body).rstrip("，,")
 
 
@@ -125,8 +132,83 @@ def _clause_boundaries(source: str) -> list[int]:
     return boundaries
 
 
+def verification_parts(text: str) -> list[str]:
+    """Coverage obligations, not assertions detached from their original scope."""
+    mask = _top_level(text)
+    boundaries = [0]
+    for match in re.finditer(r"[，,；;]", text):
+        pos = match.start()
+        if mask[pos] and not (pos and pos + 1 < len(text) and text[pos - 1].isdigit() and text[pos + 1].isdigit()):
+            boundaries.append(match.end())
+    boundaries.append(len(text))
+    parts = [text[a:b].strip() for a, b in zip(boundaries, boundaries[1:]) if text[a:b].strip()]
+    # Keep every trailing clause even for unusually long manually edited claims.
+    return parts[:7] + ["".join(parts[7:])] if len(parts) > 8 else parts
+
+
+def _independent_tail(span: TextSpan) -> list[TextSpan] | None:
+    """Keep a completed causal fact intact while separating a fresh assertion.
+
+    A pronoun may inherit a single continuing subject. Object-introducing
+    actions and sentence-wide reported/conditional scope remain conservative.
+    """
+    source = span.source
+    scoped_text = re.sub(r"因为|由于|所以|因此|从而", "", source)
+    if requires_joint_context(scoped_text):
+        return None
+    mask = _top_level(source)
+    for match in reversed(list(re.finditer(r"[，,]", source))):
+        boundary = match.end()
+        if not mask[match.start()]:
+            continue
+        prefix, tail = source[:boundary], source[boundary:].strip()
+        if not requires_joint_context(source) and not re.match(r"^[它他她其](?!们)", tail):
+            continue
+        if requires_joint_context(tail) or re.match(r"^(?:让|使|所以|因此|从而|结果|以便|则|才)", tail):
+            continue
+        action = _predicate(tail)
+        first_action = _predicate(prefix)
+        if action is None or first_action is None:
+            continue
+        # A cause cannot be detached before its result is stated.
+        cause = re.search(r"因为|由于|(?<!原)因(?=[\u3400-\u9fff])", prefix)
+        if cause and not re.search(r"而|所以|因此|从而", prefix[cause.end():]):
+            continue
+        before = _strip_connector(tail[:action.start()].strip())
+        first_prefix = prefix[:cause.start() if cause and cause.start() < first_action.start() else first_action.start()]
+        scope = _scope(first_prefix)
+        if scope is None:
+            continue
+        context = ""
+        pronoun = re.match(r"^[它他她其](?!们)", tail)
+        if pronoun:
+            if not re.fullmatch(r"[它他她](?:(?:最终|主要|通常|目前|曾经|已经|也|还))*|其(?:总部|营收|收入|利润|产量|产能)", before):
+                continue
+            # Publishing/acquiring/owning an object creates competing referents.
+            if re.search(r"发布|推出|收购|拥有|获得|宣布|签署|签订|告诉|使得|导致|让|与|和|及", prefix):
+                continue
+            if any(_scope(part[:p.start()]) is not None
+                   for part in verification_parts(prefix)[1:]
+                   if (p := _predicate(part)) is not None):
+                continue
+            context = scope.time + scope.subject
+        else:
+            if _scope(before) is None:
+                continue
+            context = "" if _INLINE_TIME.match(before) else scope.time
+        left_end = boundary
+        tail_start = boundary + len(source[boundary:]) - len(source[boundary:].lstrip())
+        left = TextSpan(span.start, span.start + left_end, prefix, normalize_claim(prefix).rstrip("，,"))
+        right = TextSpan(span.start + tail_start, span.end, tail, normalize_atomic_claim(tail, context))
+        return [*split_atomic_span(left), right]
+    return None
+
+
 def split_atomic_span(span: TextSpan) -> list[TextSpan]:
     source = span.source
+    independent = _independent_tail(span)
+    if independent:
+        return independent
     if requires_joint_context(source):
         return [span]
     boundaries = _clause_boundaries(source)

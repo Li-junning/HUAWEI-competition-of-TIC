@@ -67,7 +67,8 @@ class Storage:
 
     def set_task_status(self, task_id: str, status: TaskStatus, *, truncated: bool | None = None,
                         claims_unchecked: int | None = None, failed_providers: list[str] | None = None,
-                        error_code: str | None = None, segmentation_method: str | None = None) -> None:
+                        error_code: str | None = None, clear_error_code: bool = False,
+                        segmentation_method: str | None = None) -> None:
         fields = ["status = ?", "updated_at = ?"]
         values: list[Any] = [status.value, now_utc().isoformat()]
         if segmentation_method is not None:
@@ -78,7 +79,7 @@ class Storage:
             fields.append("claims_unchecked = ?"); values.append(max(0, claims_unchecked))
         if failed_providers is not None:
             fields.append("failed_providers = ?"); values.append(json.dumps(sorted(set(failed_providers))))
-        if error_code is not None:
+        if error_code is not None or clear_error_code:
             fields.append("error_code = ?"); values.append(error_code)
         values.append(task_id)
         with self._lock:
@@ -398,12 +399,39 @@ class Storage:
         return row, claims
 
     def mark_running_interrupted(self) -> int:
+        """Finish in-flight claims and their tasks together after a restart."""
         with self._lock:
-            cur = self.conn.execute("UPDATE tasks SET status = ?, updated_at = ? WHERE status IN (?, ?)",
-                                    (TaskStatus.INTERRUPTED.value, now_utc().isoformat(),
-                                     TaskStatus.CREATED.value, TaskStatus.RUNNING.value))
-            self.conn.commit()
-        return cur.rowcount
+            self.conn.execute("BEGIN IMMEDIATE")
+            try:
+                active_states = (
+                    ClaimState.PENDING.value, ClaimState.EXTRACTING.value,
+                    ClaimState.RETRIEVING.value, ClaimState.JUDGING.value,
+                )
+                rows = self.conn.execute(
+                    "SELECT c.claim_id, c.data FROM claims c JOIN tasks t ON t.task_id = c.task_id "
+                    "WHERE t.status IN (?, ?) AND c.state IN (?, ?, ?, ?)",
+                    (TaskStatus.CREATED.value, TaskStatus.RUNNING.value, *active_states),
+                ).fetchall()
+                for row in rows:
+                    claim = Claim.model_validate_json(row["data"])
+                    claim.state = ClaimState.FAILED
+                    claim.label = None
+                    claim.support_score = None
+                    claim.reason = "服务重启中断了本次核验，该声明尚未完成；可以重试。未将中断当作反证。"
+                    self.conn.execute(
+                        "UPDATE claims SET data = ?, state = ? WHERE claim_id = ?",
+                        (claim.model_dump_json(), claim.state.value, claim.claim_id),
+                    )
+                cur = self.conn.execute(
+                    "UPDATE tasks SET status = ?, updated_at = ? WHERE status IN (?, ?)",
+                    (TaskStatus.INTERRUPTED.value, now_utc().isoformat(),
+                     TaskStatus.CREATED.value, TaskStatus.RUNNING.value),
+                )
+                self.conn.commit()
+                return cur.rowcount
+            except BaseException:
+                self.conn.rollback()
+                raise
 
     def close(self) -> None:
         with self._lock:

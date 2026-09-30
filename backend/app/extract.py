@@ -8,6 +8,7 @@ from .schemas import Claim, ClaimLabel, ClaimState, new_id
 from .text_processing import TextSpan
 from .claim_segmentation import atomic_spans
 from .reference_resolution import has_unresolved_reference, resolve_references
+from .fact_queries import fact_slot
 
 
 def utf16_len(value: str) -> int:
@@ -48,13 +49,16 @@ def extract_claims(text: str, task_id: str, limit: int = 15, *, spans: list[Text
         )
         if has_unresolved_reference(span.source, span.normalized):
             claim.state = ClaimState.UNCHECKED
-            claim.reason = "“该学科”的指代对象无法从相邻原文唯一确定，未进行检索核验。"
+            claim.reason = "声明的指代对象无法从相邻原文唯一确定，未进行检索核验。"
         claims.append(claim)
     return claims, truncated
 
 
 def _entities(text: str) -> list[str]:
     """Find bounded subject/name anchors without treating a whole claim as one entity."""
+    slot = fact_slot(text)
+    if slot:
+        return [slot.subject]
     found: list[str] = []
     found.extend(re.findall(r"[“\"「『]([^”\"」』]{1,40})[”\"」』]", text))
     identifier_text = re.sub(r"(?:https?://|10\.\d{4,9}/)\S+", " ", text, flags=re.I)
@@ -69,7 +73,10 @@ def _entities(text: str) -> list[str]:
         value = re.sub(r"\d{4}(?:年|[-/]\d{1,2}(?:月|[-/]\d{1,2}日?)?)?$", "", value)
         if len(value.strip()) >= 2:
             found.append(value.strip())
-    noun = re.match(r"^([\u4e00-\u9fff]{2,20}?)(?=是|为|将|发布|表示|称)", text)
+    causal_subject = re.match(r"^([\u4e00-\u9fffA-Za-z0-9·_-]{2,20}?)(?=因为|由于)", text)
+    if causal_subject:
+        found.append(causal_subject.group(1))
+    noun = None if causal_subject else re.match(r"^([\u4e00-\u9fff]{2,20}?)(?=是|(?<!因)为|将|发布|表示|称)", text)
     if noun:
         found.append(noun.group(1))
     leading = re.match(r"^([\u4e00-\u9fff]{2,12})(?=(?:在|于|的|是|将|发布|表示|称|超过|低于))", text)
@@ -81,6 +88,10 @@ def _entities(text: str) -> list[str]:
 
 def _conditions(text: str) -> list[str]:
     """Keep applicability/date/range phrases as compact retrieval anchors."""
+    slot = fact_slot(text)
+    if slot:
+        # A claimed founding/birth date is an answer, not a search constraint.
+        return [slot.scope] if slot.scope else []
     found: list[str] = []
     for match in re.finditer(r"((?:在|当|截至|按照|仅在|适用于|适用范围为)[^，,。；！？!?\n]{1,30}?)(?=，|,|的|时|期间|范围|：|:|$)", text):
         value = match.group(1).strip()

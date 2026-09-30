@@ -233,7 +233,10 @@ class Pipeline:
         if has_failed_claim and not remaining_failures:
             remaining_failures = [getattr(self.retriever, "provider", "retrieval")]
         final_status = TaskStatus.PARTIAL if row["truncated"] or remaining_failures or has_unchecked_claim else TaskStatus.SUCCEEDED
-        self.storage.set_task_status(claim.task_id, final_status, failed_providers=remaining_failures)
+        self.storage.set_task_status(
+            claim.task_id, final_status, failed_providers=remaining_failures,
+            clear_error_code=final_status == TaskStatus.SUCCEEDED,
+        )
         return build_task_summary(
             self.storage.get_task(claim.task_id)[0], claims,
             technical_failure=has_failed_claim or has_unchecked_claim,

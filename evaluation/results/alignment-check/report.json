@@ -1,0 +1,247 @@
+{
+  "schema_version": 1,
+  "mode": "离线合成证据夹具",
+  "source": "E:\\AI 个人项目\\项目：华为比赛\\evaluation\\cases.json",
+  "caveat": "夹具使用合成证据，仅验证离线语义路径和指标流程；不能代表真实联网搜索准确率。",
+  "run_info": null,
+  "metrics": {
+    "classification": {
+      "denominator": 6,
+      "correct": 6,
+      "accuracy": 1.0,
+      "confusion_matrix_rows_gold_columns_prediction": {
+        "credible": {
+          "credible": 1,
+          "disputed": 0,
+          "incorrect": 0,
+          "evidence_insufficient": 0,
+          "unknown": 0
+        },
+        "disputed": {
+          "credible": 0,
+          "disputed": 1,
+          "incorrect": 0,
+          "evidence_insufficient": 0,
+          "unknown": 0
+        },
+        "incorrect": {
+          "credible": 0,
+          "disputed": 0,
+          "incorrect": 1,
+          "evidence_insufficient": 0,
+          "unknown": 0
+        },
+        "evidence_insufficient": {
+          "credible": 0,
+          "disputed": 0,
+          "incorrect": 0,
+          "evidence_insufficient": 3,
+          "unknown": 0
+        }
+      },
+      "abstentions": 3,
+      "abstention_rate": 0.5,
+      "invalid_output_count": 0,
+      "evidence_insufficient_predicted_incorrect": 0,
+      "per_class": {
+        "credible": {
+          "support": 1,
+          "precision": 1.0,
+          "recall": 1.0
+        },
+        "disputed": {
+          "support": 1,
+          "precision": 1.0,
+          "recall": 1.0
+        },
+        "incorrect": {
+          "support": 1,
+          "precision": 1.0,
+          "recall": 1.0
+        },
+        "evidence_insufficient": {
+          "support": 3,
+          "precision": 1.0,
+          "recall": 1.0
+        }
+      }
+    },
+    "functional_constraints": {
+      "sample_denominator": 7,
+      "checks": {
+        "claim_count": {
+          "passed": 3,
+          "failed": 0
+        },
+        "normalized_claim_contains": {
+          "passed": 1,
+          "failed": 0
+        },
+        "evidence_insufficient_not_error": {
+          "passed": 2,
+          "failed": 0
+        },
+        "opinion_label_respected": {
+          "passed": 1,
+          "failed": 0
+        },
+        "technical_failure_unlabeled": {
+          "passed": 1,
+          "failed": 0
+        }
+      },
+      "status": "measured_on_synthetic_fixture"
+    },
+    "data_quality": {
+      "human_labelled_sample_count": 0,
+      "human_classification_denominator": 0,
+      "human_correct": 0,
+      "human_accuracy": null,
+      "public_fact_seed_count": 0,
+      "synthetic_sample_count": 8,
+      "real_world_accuracy_claimed": false
+    },
+    "timing": {
+      "sample_count": 8,
+      "total_ms": 37.068,
+      "mean_ms": 4.633
+    }
+  },
+  "results": [
+    {
+      "case_id": "complex_conditions_support",
+      "expected": "evidence_insufficient",
+      "predicted": "evidence_insufficient",
+      "technical_failure": false,
+      "pipeline_state": null,
+      "evaluated_claim_index": 0,
+      "normalized_claim": "截至2024年,在北京,甲公司未发布A系统。",
+      "invalid_output": false,
+      "elapsed_ms": 24.439,
+      "claim_count": 1,
+      "truncated": false,
+      "functional_checks": {
+        "claim_count": true,
+        "normalized_claim_contains": true
+      },
+      "source": "synthetic"
+    },
+    {
+      "case_id": "parallel_refuted",
+      "expected": "incorrect",
+      "predicted": "incorrect",
+      "technical_failure": false,
+      "pipeline_state": null,
+      "evaluated_claim_index": 0,
+      "normalized_claim": "甲公司发布A产品",
+      "invalid_output": false,
+      "elapsed_ms": 5.697,
+      "claim_count": 2,
+      "truncated": false,
+      "functional_checks": {
+        "claim_count": true
+      },
+      "source": "synthetic"
+    },
+    {
+      "case_id": "conflicting_evidence",
+      "expected": "disputed",
+      "predicted": "disputed",
+      "technical_failure": false,
+      "pipeline_state": null,
+      "evaluated_claim_index": 0,
+      "normalized_claim": "测试机构于2024年发布了年度报告。",
+      "invalid_output": false,
+      "elapsed_ms": 0.701,
+      "claim_count": 1,
+      "truncated": false,
+      "functional_checks": {},
+      "source": "synthetic"
+    },
+    {
+      "case_id": "insufficient_evidence",
+      "expected": "evidence_insufficient",
+      "predicted": "evidence_insufficient",
+      "technical_failure": false,
+      "pipeline_state": null,
+      "evaluated_claim_index": 0,
+      "normalized_claim": "测试页面声称该产品已发布。",
+      "invalid_output": false,
+      "elapsed_ms": 0.488,
+      "claim_count": 1,
+      "truncated": false,
+      "functional_checks": {
+        "evidence_insufficient_not_error": true
+      },
+      "source": "synthetic"
+    },
+    {
+      "case_id": "no_evidence",
+      "expected": "evidence_insufficient",
+      "predicted": "evidence_insufficient",
+      "technical_failure": false,
+      "pipeline_state": null,
+      "evaluated_claim_index": 0,
+      "normalized_claim": "测试产品在2025年上市。",
+      "invalid_output": false,
+      "elapsed_ms": 0.344,
+      "claim_count": 1,
+      "truncated": false,
+      "functional_checks": {
+        "evidence_insufficient_not_error": true
+      },
+      "source": "synthetic"
+    },
+    {
+      "case_id": "opinion",
+      "expected": "not_applicable",
+      "predicted": "not_applicable",
+      "technical_failure": false,
+      "pipeline_state": null,
+      "evaluated_claim_index": 0,
+      "normalized_claim": "我认为这个方案值得推荐。",
+      "invalid_output": false,
+      "elapsed_ms": 0.159,
+      "claim_count": 1,
+      "truncated": false,
+      "functional_checks": {
+        "opinion_label_respected": true
+      },
+      "source": "synthetic"
+    },
+    {
+      "case_id": "technical_failure",
+      "expected": "technical_failure",
+      "predicted": null,
+      "technical_failure": true,
+      "pipeline_state": "failed",
+      "evaluated_claim_index": 0,
+      "normalized_claim": "测试产品已发布。",
+      "invalid_output": false,
+      "elapsed_ms": 4.203,
+      "claim_count": 1,
+      "truncated": false,
+      "functional_checks": {
+        "technical_failure_unlabeled": true
+      },
+      "source": "synthetic"
+    },
+    {
+      "case_id": "reference_resolution",
+      "expected": "credible",
+      "predicted": "credible",
+      "technical_failure": false,
+      "pipeline_state": null,
+      "evaluated_claim_index": 0,
+      "normalized_claim": "甲公司发布A产品",
+      "invalid_output": false,
+      "elapsed_ms": 1.037,
+      "claim_count": 2,
+      "truncated": false,
+      "functional_checks": {
+        "claim_count": true
+      },
+      "source": "synthetic"
+    }
+  ]
+}
