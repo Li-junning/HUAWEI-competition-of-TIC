@@ -20,9 +20,12 @@ async def http_error(_: Request, exc: HTTPException):
     return safe_error("REQUEST_INVALID", detail, exc.status_code)
 
 
-async def validation_error(_: Request, exc: RequestValidationError):
+async def validation_error(request: Request, exc: RequestValidationError):
     # Keep validation details generic: no internal model paths or raw input echoes.
     too_large = any(error.get("type") in {"string_too_long", "too_long"} for error in exc.errors())
+    if request.url.path.startswith("/api/knowledge/"):
+        return safe_error("INPUT_TOO_LARGE" if too_large else "REQUEST_INVALID",
+                          "知识库输入超过允许长度" if too_large else "知识库参数无效，请检查正文、日期和 HTTP(S) 出处地址。", 422)
     return safe_error("INPUT_TOO_LARGE" if too_large else "REQUEST_INVALID",
                       "输入文本超过 20000 字符" if too_large else "请求参数无效", 422)
 

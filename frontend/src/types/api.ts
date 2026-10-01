@@ -54,6 +54,7 @@ export interface ClaimListItem {
   entities: string[]
   conditions: string[]
   queries: string[]
+  retrieval_warnings?: string[]
   label: ClaimLabel | null
   support_score: number | null
   reason: string | null
@@ -73,6 +74,58 @@ export interface EvidenceItem {
   relation: EvidenceRelation
   quality_reason: string | null
   is_reprint: boolean
+  source_type?: 'web' | 'knowledge'
+  knowledge_document_id?: string | null
+  knowledge_chunk_id?: string | null
+  source_page?: number | null
+  source_char_start?: number | null
+  source_char_end?: number | null
+  content_hash?: string | null
+}
+
+export interface KnowledgeStatus {
+  document_count: number
+  chunk_count: number
+  indexed_chunks: number
+  mode: 'keyword' | 'hybrid'
+  model: string
+  semantic_ready: boolean
+  message: string
+  max_documents: number
+  max_chunks: number
+}
+
+export interface KnowledgeDocument {
+  document_id: string
+  title: string
+  publisher: string | null
+  source_url: string | null
+  published_at: string | null
+  tags: string[]
+  filename: string | null
+  content_hash: string
+  created_at: string
+  char_count: number
+  page_count: number
+  chunk_count: number
+  indexed_chunks: number
+}
+
+export interface KnowledgeHit {
+  chunk_id: string
+  document_id: string
+  title: string
+  publisher: string | null
+  source_url: string | null
+  published_at: string | null
+  tags: string[]
+  content_hash: string
+  page: number | null
+  char_start: number
+  char_end: number
+  excerpt: string
+  retrieval_score: number
+  matched_by: ('keyword' | 'semantic')[]
 }
 
 export interface EvidenceCluster {

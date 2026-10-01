@@ -7,7 +7,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api import status, tasks
+from .api import knowledge, status, tasks
 from .api.errors import register_error_handlers
 from .api.request_limits import TaskRequestBodyLimit
 from .api.task_admission import TaskAdmissionLimit
@@ -49,4 +49,5 @@ def create_app(
     register_error_handlers(app)
     app.include_router(status.router, prefix="/api")
     app.include_router(tasks.router, prefix="/api")
+    app.include_router(knowledge.router, prefix="/api")
     return app

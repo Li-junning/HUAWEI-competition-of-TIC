@@ -127,6 +127,12 @@ class EvidenceItem(BaseModel):
     quality_reason: str | None = None
     is_reprint: bool = False
     content_hash: str | None = None
+    source_type: str = "web"
+    knowledge_document_id: str | None = None
+    knowledge_chunk_id: str | None = None
+    source_page: int | None = None
+    source_char_start: int | None = None
+    source_char_end: int | None = None
     authority: float = Field(default=0.0, ge=0, le=1)
     relevance: float = Field(default=0.0, ge=0, le=1)
     time_fit: float = Field(default=0.0, ge=0, le=1)
@@ -177,6 +183,7 @@ class Claim(BaseModel):
     entities: list[str] = Field(default_factory=list)
     conditions: list[str] = Field(default_factory=list)
     queries: list[str] = Field(default_factory=list)
+    retrieval_warnings: list[str] = Field(default_factory=list)
     label: ClaimLabel | None = None
     support_score: int | None = Field(default=None, ge=0, le=100)
     reason: str | None = None

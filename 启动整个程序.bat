@@ -47,6 +47,7 @@ if not "%CONFIG_RESULT%"=="0" (
 
 echo [2/4] Checking ports 8000 and 5173...
 call :IS_READY
+if errorlevel 2 goto OLD_BACKEND
 if not errorlevel 1 goto APP_READY
 
 powershell.exe -NoProfile -Command "if (Test-NetConnection -ComputerName 127.0.0.1 -Port 8000 -InformationLevel Quiet -WarningAction SilentlyContinue) { exit 1 }"
@@ -70,6 +71,7 @@ if defined FRONTEND_RUNNING (
 echo [4/4] Waiting for the application...
 for /L %%I in (1,1,45) do (
   call :IS_READY
+  if errorlevel 2 goto OLD_BACKEND
   if not errorlevel 1 goto APP_READY
   powershell.exe -NoProfile -Command "Start-Sleep -Seconds 1" >nul 2>&1
 )
@@ -88,6 +90,14 @@ if not defined AI_VERIFIER_NO_BROWSER start "" "http://127.0.0.1:5173/"
 powershell.exe -NoProfile -Command "Start-Sleep -Seconds 2" >nul 2>&1
 exit /b 0
 
+:OLD_BACKEND
+echo.
+echo ERROR: the running backend does not include the knowledge API.
+echo Close the old AI Verifier Backend window, then run this launcher again.
+echo Refresh the application page after the backend restarts.
+pause
+exit /b 1
+
 :IS_READY
-powershell.exe -NoProfile -Command "Add-Type -AssemblyName System.Net.Http; $client = New-Object System.Net.Http.HttpClient; $client.Timeout = [TimeSpan]::FromSeconds(2); try { $api = $client.GetAsync('http://127.0.0.1:5173/api/status').GetAwaiter().GetResult(); $page = $client.GetAsync('http://127.0.0.1:5173/').GetAwaiter().GetResult(); $html = $page.Content.ReadAsStringAsync().GetAwaiter().GetResult(); if ([int]$api.StatusCode -ne 200 -or [int]$page.StatusCode -ne 200 -or -not $html.Contains('<div id=')) { exit 1 }; $status = $api.Content.ReadAsStringAsync().GetAwaiter().GetResult() | ConvertFrom-Json; if ($null -ne $status.search_mode) { exit 0 }; exit 1 } catch { exit 1 } finally { $client.Dispose() }" >nul 2>&1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0backend\scripts\check_application_ready.ps1" >nul 2>&1
 exit /b %ERRORLEVEL%

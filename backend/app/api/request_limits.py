@@ -16,15 +16,19 @@ class TaskRequestBodyLimit:
         self.max_bytes = max_bytes
 
     async def __call__(self, scope: dict, receive: Any, send: Any) -> None:
-        if scope["type"] != "http" or scope["method"] != "POST" or scope["path"] != "/api/tasks":
+        if scope["type"] != "http" or scope["method"] != "POST" or not (
+            scope["path"] == "/api/tasks" or scope["path"].startswith("/api/knowledge/")
+        ):
             await self.app(scope, receive, send)
             return
+
+        max_bytes = 4 * 1024 * 1024 if scope["path"] == "/api/knowledge/documents" else self.max_bytes
 
         headers = dict(scope.get("headers", []))
         content_length = headers.get(b"content-length")
         if content_length is not None:
             try:
-                if int(content_length) > self.max_bytes:
+                if int(content_length) > max_bytes:
                     await self._reject(send)
                     return
             except ValueError:
@@ -37,7 +41,7 @@ class TaskRequestBodyLimit:
             if message["type"] == "http.disconnect":
                 return
             chunks.extend(message.get("body", b""))
-            if len(chunks) > self.max_bytes:
+            if len(chunks) > max_bytes:
                 await self._reject(send)
                 return
             if not message.get("more_body", False):

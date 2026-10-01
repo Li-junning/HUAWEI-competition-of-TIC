@@ -25,8 +25,14 @@ async def get_status(pipeline: PipelineDependency):
     message = messages.get((search_mode, judge_mode), "当前配置尚未识别")
     segment_mode = "mimo" if getattr(pipeline, "segmenter", None) else "rules"
     message += "；语句切分：" + ("模型语义切分（失败时回退本地规则）" if segment_mode == "mimo" else "本地规则")
+    library = getattr(pipeline, "knowledge", None)
+    knowledge = library.status() if library else None
+    knowledge_ready = bool(knowledge and knowledge["document_count"])
+    if knowledge:
+        message += f"；知识库 {knowledge['document_count']} 份资料（{'关键词 + 语义检索' if knowledge['semantic_ready'] else '关键词检索'}）"
     return {"search_mode": search_mode, "judge_mode": judge_mode,
             "segment_mode": segment_mode,
-            "ready": bool(search_ready and judge_ready), "live": live, "message": message}
+            "knowledge": knowledge,
+            "ready": bool((search_ready or knowledge_ready) and judge_ready), "live": live, "message": message}
 
 

@@ -13,6 +13,15 @@ function relationLabel(relation: EvidenceItem['relation']): string {
   const labels: Record<EvidenceItem['relation'], string> = { supports: '支持', refutes: '反驳', partially_supports: '部分支持', irrelevant: '不相关', unknown: '待确认' }
   return labels[relation]
 }
+function knowledgeUrl(item: EvidenceItem): string {
+  const url = new URL(window.location.href)
+  url.searchParams.set('library', '1')
+  url.searchParams.set('kb_document', item.knowledge_document_id ?? '')
+  url.searchParams.set('kb_page', String(item.source_page ?? 1))
+  url.searchParams.set('kb_start', String(item.source_char_start ?? 0))
+  url.searchParams.set('kb_end', String(item.source_char_end ?? 0))
+  return `${url.pathname}${url.search}${url.hash}`
+}
 </script>
 
 <template>
@@ -25,13 +34,15 @@ function relationLabel(relation: EvidenceItem['relation']): string {
           <div class="evidence-topline">
             <span class="relation" :class="'relation-' + item.relation">{{ relationLabel(item.relation) }}</span>
             <span v-if="item.is_reprint" class="reprint-tag">转载</span>
+            <a v-if="item.source_type === 'knowledge' && item.knowledge_document_id" :href="knowledgeUrl(item)" class="source-link">定位知识库原文 →</a>
             <a v-if="safeExternalUrl(item.url)" :href="safeExternalUrl(item.url) ?? undefined" target="_blank" rel="noopener noreferrer" class="source-link">打开来源 ↗</a>
           </div>
           <h4>{{ item.title || '无标题来源' }}</h4>
           <p class="source-meta">{{ item.publisher || '未知发布方' }} · 发布 {{ formatDate(item.published_at) }} · 取证 {{ formatDate(item.retrieved_at) }}</p>
+          <p v-if="item.source_type === 'knowledge'" class="source-meta">我的知识库 · {{ item.source_page ? `第 ${item.source_page} 页 · ` : '' }}正文字符 {{ item.source_char_start }}–{{ item.source_char_end }} · 版本 {{ item.content_hash?.slice(0, 12) }}</p>
           <blockquote class="excerpt">{{ item.excerpt || '未返回可核查正文片段。' }}</blockquote>
           <p class="quality-reason">来源说明：{{ item.quality_reason || '未提供' }}</p>
-          <p class="raw-url">{{ safeExternalUrl(item.url) ?? '来源地址未通过 HTTP(S) 校验' }}</p>
+          <p class="raw-url">{{ safeExternalUrl(item.url) ?? (item.source_type === 'knowledge' ? '未填写外部出处；已保存本地原文片段与资料版本。' : '来源地址未通过 HTTP(S) 校验') }}</p>
         </article>
       </section>
     </div>

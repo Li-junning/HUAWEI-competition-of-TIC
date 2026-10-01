@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import AppIcon from './components/AppIcon.vue'
+import ReportTools from './components/ReportTools.vue'
+import KnowledgePage from './components/KnowledgePage.vue'
 import ClaimCard from './components/ClaimCard.vue'
 import ReviewPage from './components/ReviewPage.vue'
 import SourceTextPanel from './components/SourceTextPanel.vue'
@@ -12,10 +15,34 @@ import { useClaimFilters } from './composables/useClaimFilters'
 import { useServiceStatus } from './composables/useServiceStatus'
 import { useVerificationTask } from './composables/useVerificationTask'
 import { percent } from './utils/security'
+import { isSubmitShortcut } from './utils/keyboard'
 
 const session = useVerificationTask()
+const libraryOpen = ref(new URLSearchParams(window.location.search).get('library') === '1')
+const libraryDocument = ref(new URLSearchParams(window.location.search).get('kb_document'))
+function syncLibrary(): void {
+  const params = new URLSearchParams(window.location.search)
+  libraryOpen.value = params.get('library') === '1'
+  libraryDocument.value = params.get('kb_document')
+}
+function openLibrary(): void {
+  const url = new URL(window.location.href)
+  url.searchParams.set('library', '1')
+  for (const key of ['kb_document', 'kb_page', 'kb_start', 'kb_end']) url.searchParams.delete(key)
+  window.history.pushState(null, '', url)
+  syncLibrary()
+}
+function closeLibrary(): void {
+  const url = new URL(window.location.href)
+  for (const key of ['library', 'kb_document', 'kb_page', 'kb_start', 'kb_end']) url.searchParams.delete(key)
+  window.history.pushState(null, '', url)
+  syncLibrary()
+}
+onMounted(() => window.addEventListener('popstate', syncLibrary))
+onUnmounted(() => window.removeEventListener('popstate', syncLibrary))
 const { text, taskId, task, claims, details, activeDetail, retryingClaim, removingClaim, reviewBusy, reviewHistory, errorMessage, formError, phase, canExport, canRefresh, submit, exportReport, stopPolling, resumePolling, loadDetail, retry, editClaimText, removeClaim, addManualClaim, splitManualClaim, mergeManualClaims, undoReviewEvent } = session
 const reviewerName = ref('')
+const inputElement = ref<HTMLTextAreaElement | null>(null)
 const { selectedClaimId, reviewOpen, restoreLocation, openClaim, openReview, returnToReport, newTask } = useTaskNavigation(session)
 const { sourceText, sourceError, sourceLoading, reloadSource } = useTaskSource(taskId)
 const { filter, sortRisk, filteredClaims } = useClaimFilters(claims)
@@ -23,6 +50,7 @@ const serviceStatus = useServiceStatus()
 const riskCount = computed(() => task.value ? task.value.label_counts.incorrect + task.value.label_counts.disputed : 0)
 const hasLiveWork = computed(() => !!taskId.value && (!task.value || task.value.status === 'created' || task.value.status === 'running'))
 const verificationCoverage = computed(() => percent(task.value?.coverage.verification_coverage))
+const processingProgress = computed(() => task.value?.claims_extracted ? Math.min(100, Math.round(task.value.claims_processed / task.value.claims_extracted * 100)) : 0)
 const stateCounts = computed(() => {
   const counts = { pending: 0, extracting: 0, retrieving: 0, judging: 0, done: 0, failed: 0, unchecked: 0 }
   for (const claim of claims.value) counts[claim.state] += 1
@@ -49,6 +77,12 @@ const { printReport } = usePrintReport()
 function fillExample(): void {
   text.value = '研究显示，全球平均气温在过去十年持续上升。某项发表于 2023 年的研究证明，所有城市都将在 2030 年前实现碳中和。该政策将使相关行业的就业人数增长 50%。'
   formError.value = null
+  inputElement.value?.focus()
+}
+function handleInputKeydown(event: KeyboardEvent): void {
+  if (!isSubmitShortcut(event)) return
+  event.preventDefault()
+  if (text.value.trim() && phase.value === 'input') void submit()
 }
 function reviewer(): string | null {
   let name = reviewerName.value.trim()
@@ -75,15 +109,55 @@ function undoReview(eventId: string): void { const name = reviewer(); if (name) 
 
 <template>
   <div class="app-shell">
-    <header class="topbar"><div class="brand"><span class="brand-mark" aria-hidden="true">✓</span><div><strong>可信度验证台</strong><small>Evidence review workspace</small></div></div><span class="security-note">证据驱动 · 审慎表达</span></header>
-    <main>
-      <section v-if="selectedClaimId" class="claim-page" aria-labelledby="claim-page-title"><button type="button" class="secondary-button claim-page-back" @click="returnToReport">← 返回核验结果</button><button type="button" class="secondary-button" @click="printReport">打印当前证据</button><div class="claim-page-intro"><p class="eyebrow">Web search results</p><h1 id="claim-page-title">声明详情与网页检索</h1><p>查看这条信息的检索来源、摘要和判断依据。</p></div><details v-if="sourceText" class="source-detail-context"><summary>在原文中定位这条声明</summary><SourceTextPanel :text="sourceText" :claims="claims" :selected-claim-id="selectedClaimId" @open="openClaim" /></details><p v-if="errorMessage" class="global-error" role="alert">{{ errorMessage }}</p><ClaimCard v-if="details[selectedClaimId]" :claim="details[selectedClaimId]" :detail="details[selectedClaimId]" :loading="activeDetail === selectedClaimId" :retrying="retryingClaim === selectedClaimId" :retry-disabled="phase === 'processing' || hasLiveWork || retryingClaim !== null || reviewBusy" :editable="!hasLiveWork" :review-disabled="reviewBusy" :remove-disabled="removingClaim !== null" standalone @retry="retry" @edit="editClaim" @remove="deleteClaim" /><div v-else class="loading-panel">{{ retryingClaim === selectedClaimId ? '正在重新检索，完成后更新证据…' : errorMessage ? '暂时无法显示这条声明。' : '正在读取网页检索结果…' }}<button v-if="errorMessage && activeDetail !== selectedClaimId && retryingClaim !== selectedClaimId" type="button" class="secondary-button claim-page-reload" @click="loadDetail(selectedClaimId)">重新加载</button></div></section>
+    <a class="skip-link" href="#main-content">跳转到主要内容</a>
+    <header class="topbar">
+      <div class="brand"><span class="brand-mark"><AppIcon name="shield" /></span><div><strong>可信度验证台</strong><small>EVIDENCE WORKSPACE</small></div></div>
+      <nav class="workspace-nav" aria-label="工作区">
+        <button type="button" :aria-current="!libraryOpen ? 'page' : undefined" @click="closeLibrary"><AppIcon name="shield" />可信度验证</button>
+        <button type="button" :aria-current="libraryOpen ? 'page' : undefined" @click="openLibrary"><AppIcon name="library" />我的知识库</button>
+      </nav>
+      <span v-if="serviceStatus" class="service-indicator" :class="{ 'is-unavailable': !serviceStatus.ready }" :title="serviceStatus.message"><i aria-hidden="true"></i>{{ !serviceStatus.ready ? '服务待就绪' : serviceStatus.live ? '联网模式已配置' : '离线演示模式' }}</span>
+    </header>
+    <main id="main-content" tabindex="-1">
+      <KnowledgePage v-if="libraryOpen" :key="libraryDocument ?? 'library'" :initial-document="libraryDocument" @back="closeLibrary" />
+      <template v-else>
+      <section v-if="selectedClaimId" class="claim-page" aria-labelledby="claim-page-title"><button type="button" class="secondary-button claim-page-back" @click="returnToReport">← 返回核验结果</button><button type="button" class="secondary-button" @click="printReport">打印当前证据</button><div class="claim-page-intro"><p class="eyebrow">Web search results</p><h1 id="claim-page-title">声明详情与证据检索</h1><p>查看这条信息的检索来源、摘要和判断依据。</p></div><details v-if="sourceText" class="source-detail-context"><summary>在原文中定位这条声明</summary><SourceTextPanel :text="sourceText" :claims="claims" :selected-claim-id="selectedClaimId" @open="openClaim" /></details><p v-if="errorMessage" class="global-error" role="alert">{{ errorMessage }}</p><ClaimCard v-if="details[selectedClaimId]" :claim="details[selectedClaimId]" :detail="details[selectedClaimId]" :loading="activeDetail === selectedClaimId" :retrying="retryingClaim === selectedClaimId" :retry-disabled="phase === 'processing' || hasLiveWork || retryingClaim !== null || reviewBusy" :editable="!hasLiveWork" :review-disabled="reviewBusy" :remove-disabled="removingClaim !== null" standalone @retry="retry" @edit="editClaim" @remove="deleteClaim" /><div v-else class="loading-panel">{{ retryingClaim === selectedClaimId ? '正在重新检索，完成后更新证据…' : errorMessage ? '暂时无法显示这条声明。' : '正在读取检索证据…' }}<button v-if="errorMessage && activeDetail !== selectedClaimId && retryingClaim !== selectedClaimId" type="button" class="secondary-button claim-page-reload" @click="loadDetail(selectedClaimId)">重新加载</button></div></section>
       <ReviewPage v-else-if="reviewOpen" :task-id="taskId ?? ''" :text="sourceText" :source-loading="sourceLoading" :source-error="sourceError" :claims="claims" :history="reviewHistory" v-model:reviewer="reviewerName" :busy="reviewBusy" :disabled="hasLiveWork" :limit="task?.claim_limit ?? 15" :error-message="errorMessage" @back="returnToReport" @reload="reloadSource" @add="addClaim" @split="splitClaim" @merge="mergeClaims" @undo="undoReview" />
       <section v-else-if="phase === 'input'" class="landing" aria-labelledby="landing-title">
-        <div class="landing-copy"><p class="eyebrow">AI answer verification</p><h1 id="landing-title">让重要结论，<em>经得起追问。</em></h1><p class="lead">把 AI 回答拆成可核验的事实声明，保留来源、限定条件与不确定性。系统展示证据覆盖，而不替你编造确定答案。</p><div class="workflow" aria-label="核验流程"><div><span>01</span><b>提取声明</b><p>识别可检验的原子事实</p></div><div><span>02</span><b>检索证据</b><p>聚合来源并标记失败</p></div><div><span>03</span><b>审慎呈现</b><p>显示覆盖、风险与缺口</p></div></div><div class="trust-notes"><span>不把技术失败当作反证</span><span>支持指数不是正确概率</span><span>达到声明上限会明确提示</span></div></div>
-        <form class="input-card" @submit.prevent="submit"><div class="input-card-heading"><div><p class="eyebrow">开始一次核验</p><h2>粘贴待核验内容</h2></div><span class="limit-badge">上限 20,000 字符</span></div><label class="sr-only" for="verification-input">待核验文本</label><textarea id="verification-input" v-model="text" maxlength="20000" placeholder="将 ChatGPT、DeepSeek 或其他模型的回答粘贴到这里…" aria-describedby="input-guidance input-error"></textarea><div class="input-meta"><span>{{ text.length.toLocaleString() }} / 20,000</span><span>本次最多处理 15 条声明</span></div><p id="input-guidance" class="privacy-hint">示例只会填入编辑框，需由你主动提交后才创建任务。</p><p v-if="formError || errorMessage" id="input-error" class="form-error" role="alert">{{ formError || errorMessage }}</p><div class="input-actions"><button class="primary-button" type="submit">开始核验 <span aria-hidden="true">→</span></button><button class="secondary-button" type="button" @click="fillExample">填入示例</button></div><p v-if="serviceStatus" class="service-hint" :class="{ 'service-alert': !serviceStatus.ready }">{{ serviceStatus.message }}</p></form>
+        <div class="landing-copy">
+          <p class="hero-kicker"><AppIcon name="sparkles" /> AI 答案可信度验证</p>
+          <h1 id="landing-title">让重要结论，<em>经得起追问。</em></h1>
+          <p class="lead">从一段 AI 回答，到一份有据可循的核验报告。<br />逐条追溯事实、比对来源，让不确定性清晰可见。</p>
+        </div>
+        <div class="verification-workspace">
+          <form class="input-card" aria-labelledby="input-title" @submit.prevent="submit">
+            <div class="input-card-heading">
+              <div class="input-heading-title"><span class="input-heading-icon"><AppIcon name="file" /></span><div><h2 id="input-title">粘贴待核验内容</h2><p>从你想确认的那段回答开始</p></div></div>
+              <button class="example-button" type="button" @click="fillExample"><AppIcon name="sparkles" />试试示例</button>
+            </div>
+            <div class="editor-container" :class="{ 'has-content': text.length > 0 }">
+              <label class="sr-only" for="verification-input">待核验文本</label>
+              <textarea id="verification-input" ref="inputElement" v-model="text" maxlength="20000" placeholder="将 ChatGPT、DeepSeek 或其他模型的回答粘贴到这里…&#10;&#10;可以是一段事实描述、一组数据，或带有论文引用的结论。" :aria-describedby="formError || errorMessage ? 'input-guidance input-error' : 'input-guidance'" :aria-invalid="!!formError" @keydown="handleInputKeydown"></textarea>
+              <div class="input-meta"><span>{{ text.length.toLocaleString() }} <span class="character-limit">/ 20,000 字符</span></span><button v-if="text.length" class="clear-button" type="button" @click="text = ''; formError = null; inputElement?.focus()"><AppIcon name="close" />清空</button><span v-else>保留原文，方便复核</span></div>
+            </div>
+            <div class="input-actions"><p id="input-guidance"><AppIcon name="layers" /><span>每次最多核验 <b>15 条声明</b><small>示例填入后，由你主动提交<span class="keyboard-shortcut"> · Ctrl / ⌘ + Enter 提交</span></small></span></p><button class="primary-button" type="submit" :disabled="!text.trim()">开始核验<AppIcon name="arrow" /></button></div>
+            <p v-if="formError || errorMessage" id="input-error" class="form-error" role="alert">{{ formError || errorMessage }}</p>
+            <div v-if="serviceStatus" class="service-hint" :class="{ 'service-alert': !serviceStatus.ready }"><AppIcon name="info" /><p>{{ serviceStatus.message }}</p></div>
+          </form>
+          <aside class="workflow-panel" aria-labelledby="workflow-title">
+            <p class="eyebrow">HOW IT WORKS</p><h2 id="workflow-title">一段回答，三步核验</h2><p class="workflow-intro">判断可以追溯，证据可以复核。</p>
+            <ol class="workflow">
+              <li><span class="workflow-icon"><AppIcon name="file" /></span><div><span class="workflow-step">STEP 01</span><h3>提取事实声明</h3><p>拆解可核验的事实，保留主体、时间与限定条件。</p></div></li>
+              <li><span class="workflow-icon"><AppIcon name="search" /></span><div><span class="workflow-step">STEP 02</span><h3>寻找支持与反向证据</h3><p>结合网页与知识库资料，比对来源及适用范围。</p></div></li>
+              <li><span class="workflow-icon"><AppIcon name="shield" /></span><div><span class="workflow-step">STEP 03</span><h3>生成可复核报告</h3><p>查看判断、证据覆盖与风险，按需调整或导出。</p></div></li>
+            </ol>
+            <button class="library-shortcut" type="button" @click="openLibrary"><span class="library-shortcut-icon"><AppIcon name="library" /></span><span><strong>有自己的参考资料？</strong><small>添加到我的知识库</small></span><AppIcon name="arrow" /></button>
+          </aside>
+        </div>
+        <div class="trust-notes" aria-label="核验原则"><span><AppIcon name="check" />技术失败不作为反证</span><span><AppIcon name="check" />证据不足明确呈现</span><span><AppIcon name="check" />支持指数不等于正确概率</span></div>
       </section>
-      <section v-else class="report-view" aria-live="polite"><div class="report-toolbar"><div><p class="eyebrow">Verification task</p><h1>核验结果</h1><p v-if="task" class="task-id">任务 {{ task.task_id }} · 输入 {{ task.input_char_count.toLocaleString() }} 字符</p></div><div class="toolbar-actions"><button class="secondary-button" type="button" @click="newTask">新建任务</button><button v-if="task && !hasLiveWork" class="secondary-button review-entry-button" type="button" @click="openReview">人工调整断句 <span aria-hidden="true">→</span></button><button v-if="hasLiveWork && phase === 'processing'" class="secondary-button" type="button" @click="stopPolling">停止刷新</button><button v-else-if="canRefresh" class="secondary-button" type="button" @click="resumePolling">{{ hasLiveWork ? '恢复刷新' : '刷新结果' }}</button><button v-if="task" class="secondary-button" type="button" @click="printReport">打印报告</button><template v-if="canExport && task"><button class="secondary-button" type="button" @click="exportReport('json')">导出 JSON</button><button class="primary-button small" type="button" @click="exportReport('md')">导出 Markdown</button></template></div></div><p v-if="errorMessage" class="global-error" role="alert">{{ errorMessage }}</p><template v-if="task"><section class="process-panel" aria-labelledby="process-title"><div><p class="eyebrow">Live task state</p><h2 id="process-title">{{ statusLine }}</h2></div><div class="process-stats"><div><strong>{{ task.claims_processed }}</strong><span>已处理</span></div><div><strong>{{ riskCount }}</strong><span>风险提示</span></div><div><strong>{{ verificationCoverage }}</strong><span>核验覆盖</span></div></div><div v-if="stateCountItems.length" class="process-states" aria-label="已返回声明的处理状态"><span v-for="item in stateCountItems" :key="item.key">{{ item.label }} {{ item.count }}</span></div><RetrievalQueue v-if="phase === 'processing' && hasLiveWork" :claims="claims" /><p class="process-caption">已完成的声明会陆续显示，可随时查看证据。</p></section><SourceTextPanel v-if="sourceText" :text="sourceText" :claims="claims" :selected-claim-id="selectedClaimId" @open="openClaim" /><p v-else-if="sourceLoading" class="process-caption">正在加载原文…</p><p v-else-if="sourceError" class="notice warning">原文暂不可用：{{ sourceError }} <button type="button" class="text-button" @click="reloadSource">重新加载原文</button></p><div class="report-content"><CoverageSummary :task="task" /><section class="claims-section" aria-labelledby="claims-title"><div class="section-heading"><div><p class="eyebrow">Claims review</p><h2 id="claims-title">已返回声明 <span>{{ filteredClaims.length }}<small> / {{ claims.length }}</small></span></h2></div><div class="filters"><select v-model="filter" aria-label="按标签筛选"><option value="all">全部标签</option><option value="credible">可信</option><option value="disputed">存在争议</option><option value="incorrect">错误</option><option value="evidence_insufficient">证据不足</option><option value="not_applicable">不适用</option></select><label><input v-model="sortRisk" type="checkbox" /> 风险优先</label></div></div><div v-if="filteredClaims.length" class="claims-list"><ClaimCard v-for="claim in filteredClaims" :key="claim.claim_id" :claim="claim" :detail="details[claim.claim_id] ?? null" :loading="activeDetail === claim.claim_id" :retrying="retryingClaim === claim.claim_id" :retry-disabled="phase === 'processing' || hasLiveWork || retryingClaim !== null || reviewBusy" :editable="!hasLiveWork" :review-disabled="reviewBusy" :remove-disabled="removingClaim !== null" @open="openClaim" @retry="retry" @edit="editClaim" @remove="deleteClaim" /></div><div v-else class="empty-state">{{ claims.length ? '没有符合当前筛选条件的声明。' : hasLiveWork && phase === 'report' ? '尚无声明，恢复刷新查看结果。' : hasLiveWork ? '尚未返回可展示的声明；页面会在获得真实结果后更新。' : '本次任务未返回可展示的声明。' }}</div></section></div></template><div v-else class="loading-panel">正在连接任务…</div><footer class="disclaimer">本系统基于当前可访问证据提供内容质检，不承诺绝对真伪。证据不足、来源失败或未核验声明均不构成反证；支持指数不等于事实为真的概率。</footer></section>
+      <section v-else class="report-view"><div class="report-toolbar"><div><p class="eyebrow">Verification task</p><h1>核验结果</h1><p v-if="task" class="task-id">任务 {{ task.task_id }} · 输入 {{ task.input_char_count.toLocaleString() }} 字符</p></div><div class="toolbar-actions"><button class="secondary-button" type="button" @click="newTask">新建任务</button><button v-if="task && !hasLiveWork" class="secondary-button review-entry-button" type="button" @click="openReview">人工调整断句 <span aria-hidden="true">→</span></button><button v-if="hasLiveWork && phase === 'processing'" class="secondary-button" type="button" @click="stopPolling">停止刷新</button><button v-else-if="canRefresh" class="secondary-button" type="button" @click="resumePolling">{{ hasLiveWork ? '恢复刷新' : '刷新结果' }}</button><ReportTools v-if="task" :exportable="canExport" @print="printReport" @export="exportReport" /></div></div><p v-if="errorMessage" class="global-error" role="alert">{{ errorMessage }}</p><template v-if="task"><section class="process-panel" aria-labelledby="process-title"><div><p class="eyebrow">Live task state</p><h2 id="process-title" aria-live="polite" aria-atomic="true">{{ statusLine }}</h2></div><div class="process-stats"><div><strong>{{ task.claims_processed }}</strong><span>已处理</span></div><div><strong>{{ riskCount }}</strong><span>风险提示</span></div><div><strong>{{ verificationCoverage }}</strong><span>核验覆盖</span></div></div><div v-if="hasLiveWork && task.claims_extracted > 0" class="task-progress-row"><div class="task-progress" role="progressbar" aria-label="已处理声明" :aria-valuemin="0" :aria-valuemax="task.claims_extracted" :aria-valuenow="Math.min(task.claims_processed, task.claims_extracted)"><span :style="{ width: processingProgress + '%' }"></span></div><span>{{ task.claims_processed }} / {{ task.claims_extracted }} 条已处理</span></div><div v-if="stateCountItems.length" class="process-states" aria-label="已返回声明的处理状态"><span v-for="item in stateCountItems" :key="item.key">{{ item.label }} {{ item.count }}</span></div><RetrievalQueue v-if="phase === 'processing' && hasLiveWork" :claims="claims" /><p class="process-caption">已完成的声明会陆续显示，可随时查看证据。</p></section><SourceTextPanel v-if="sourceText" :text="sourceText" :claims="claims" :selected-claim-id="selectedClaimId" @open="openClaim" /><p v-else-if="sourceLoading" class="process-caption">正在加载原文…</p><p v-else-if="sourceError" class="notice warning">原文暂不可用：{{ sourceError }} <button type="button" class="text-button" @click="reloadSource">重新加载原文</button></p><div class="report-content"><CoverageSummary :task="task" /><section class="claims-section" aria-labelledby="claims-title"><div class="section-heading"><div><p class="eyebrow">Claims review</p><h2 id="claims-title">已返回声明 <span>{{ filteredClaims.length }}<small> / {{ claims.length }}</small></span></h2></div><div class="filters"><select v-model="filter" aria-label="按标签筛选"><option value="all">全部标签</option><option value="credible">可信</option><option value="disputed">存在争议</option><option value="incorrect">错误</option><option value="evidence_insufficient">证据不足</option><option value="not_applicable">不适用</option></select><label><input v-model="sortRisk" type="checkbox" /> 风险优先</label></div></div><div v-if="filteredClaims.length" class="claims-list"><ClaimCard v-for="claim in filteredClaims" :key="claim.claim_id" :claim="claim" :detail="details[claim.claim_id] ?? null" :loading="activeDetail === claim.claim_id" :retrying="retryingClaim === claim.claim_id" :retry-disabled="phase === 'processing' || hasLiveWork || retryingClaim !== null || reviewBusy" :editable="!hasLiveWork" :review-disabled="reviewBusy" :remove-disabled="removingClaim !== null" @open="openClaim" @retry="retry" @edit="editClaim" @remove="deleteClaim" /></div><div v-else class="empty-state">{{ claims.length ? '没有符合当前筛选条件的声明。' : hasLiveWork && phase === 'report' ? '尚无声明，恢复刷新查看结果。' : hasLiveWork ? '尚未返回可展示的声明；页面会在获得真实结果后更新。' : '本次任务未返回可展示的声明。' }}</div></section></div></template><div v-else class="loading-panel" role="status">正在连接任务…</div><footer class="disclaimer">本系统基于当前可访问证据提供内容质检，不承诺绝对真伪。证据不足、来源失败或未核验声明均不构成反证；支持指数不等于事实为真的概率。</footer></section>
+      </template>
     </main>
   </div>
 </template>

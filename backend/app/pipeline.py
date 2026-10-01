@@ -20,6 +20,8 @@ from .providers import get_evidence_judge, get_search_provider
 from .providers.base import SearchProviderError, JudgmentProviderError
 from .diagnostics import audit
 from .retrieve import SearchBackedRetriever
+from .knowledge import KnowledgeBase
+from .knowledge_retrieval import KnowledgeBackedRetriever
 from .schemas import ClaimState, EvidenceCluster, TaskStatus, TaskSummary, now_utc, new_id
 from .summaries import build_task_summary
 from .storage import Storage
@@ -78,8 +80,10 @@ class Pipeline:
     def __init__(self, storage: Storage, settings: Settings | None = None, retriever=None, evidence_judge=None, segmenter=None) -> None:
         self.storage = storage
         self.settings = settings or get_settings()
-        self.retriever = retriever or SearchBackedRetriever(
-            get_search_provider(),
+        self.knowledge = KnowledgeBase(storage)
+        self.retriever = retriever or KnowledgeBackedRetriever(
+            self.knowledge,
+            SearchBackedRetriever(get_search_provider(), max_evidence=self.settings.max_evidence_per_claim),
             max_evidence=self.settings.max_evidence_per_claim,
         )
         self.evidence_judge = evidence_judge if evidence_judge is not None else get_evidence_judge()
@@ -157,6 +161,8 @@ class Pipeline:
             try:
                 with self._external_slots:
                     clusters = _retrieve_with_deadline(self.retriever, claim, started + self.settings.task_timeout_seconds)
+                if claim.retrieval_warnings:
+                    failures.append(getattr(self.retriever, "provider", "retrieval"))
             except Exception as exc:
                 claim.state = ClaimState.FAILED
                 claim.reason = _retrieval_failure_reason(exc, "检索服务暂时不可用，未将技术失败当作反证。")
@@ -210,6 +216,7 @@ class Pipeline:
         claim.evidence_cluster_ids = []
         claim.evidence_clusters = []
         claim.paper_check = None
+        claim.retrieval_warnings = []
         claim.state = ClaimState.RETRIEVING
         self.storage.save_claim(claim)
         try:
@@ -227,7 +234,7 @@ class Pipeline:
         self.storage.save_claim(claim)
         record = self.storage.get_task(claim.task_id)
         row, claims = record
-        has_failed_claim = any(c.state == ClaimState.FAILED for c in claims)
+        has_failed_claim = any(c.state == ClaimState.FAILED or c.retrieval_warnings for c in claims)
         has_unchecked_claim = any(c.state == ClaimState.UNCHECKED for c in claims)
         remaining_failures = json.loads(row["failed_providers"]) if has_failed_claim else []
         if has_failed_claim and not remaining_failures:

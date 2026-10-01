@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, createTask, deleteClaim, getTask, splitClaim } from './client'
+import { ApiError, createTask, deleteClaim, getTask, splitClaim, getKnowledgeStatus, getKnowledgeDocument, importKnowledgeDocument } from './client'
 
 describe('API request reliability', () => {
   const fetchMock = vi.fn<typeof fetch>()
@@ -26,6 +26,30 @@ describe('API request reliability', () => {
     await expect(createTask('待核验文本')).rejects.toMatchObject({
       name: 'ApiError', message: '操作太频繁', code: 'TASK_RATE_LIMIT', status: 429,
     })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('explains that a generic knowledge 404 needs a backend restart', async () => {
+    fetchMock.mockResolvedValue(new Response('{"detail":"Not Found"}', { status: 404 }))
+    await expect(getKnowledgeStatus()).rejects.toMatchObject({
+      status: 404, code: 'KNOWLEDGE_API_UNAVAILABLE', message: expect.stringContaining('重新启动'),
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not confuse a deleted source with an old backend', async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ error: { code: 'KB_NOT_FOUND', message: '资料不存在或已删除。' } }), { status: 404 }))
+    await expect(getKnowledgeDocument('kd_deleted')).rejects.toMatchObject({
+      status: 404, code: 'KB_NOT_FOUND', message: '资料不存在或已删除。',
+    })
+  })
+
+  it('does not repeat an import against an old backend or call it a timeout', async () => {
+    fetchMock.mockResolvedValue(new Response('{"detail":"Not Found"}', { status: 404 }))
+    const pending = importKnowledgeDocument({ title: '资料', publisher: null, source_url: null, published_at: null, tags: [], content: '资料正文' })
+    await expect(pending).rejects.toMatchObject({ code: 'KNOWLEDGE_API_UNAVAILABLE' })
+    await expect(pending).rejects.not.toMatchObject({ message: expect.stringContaining('超时') })
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(vi.getTimerCount()).toBe(0)
   })

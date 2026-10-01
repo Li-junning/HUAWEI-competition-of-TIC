@@ -8,4 +8,5 @@ def isolated_runtime(tmp_path, monkeypatch):
     monkeypatch.setenv("VERIFIER_PROVIDER_MODE", "mock")
     monkeypatch.setenv("VERIFIER_JUDGE_MODE", "off")
     monkeypatch.setenv("VERIFIER_SEGMENT_MODE", "rules")
+    monkeypatch.setenv("VERIFIER_KB_EMBEDDINGS", "off")
     monkeypatch.setenv("VERIFIER_DATABASE_PATH", str(tmp_path / "test.sqlite3"))

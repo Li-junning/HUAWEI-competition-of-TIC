@@ -68,5 +68,11 @@ def to_markdown(summary: TaskSummary, claims: list[Claim]) -> str:
                 title = _text(item.title) or "证据"
                 lines.append(f"- 证据：[{title}]({_markdown_url(url)})" if url else f"- 证据：{title}")
                 lines.append(f"  - 片段：{_text(item.excerpt)}")
+                if item.source_type == "knowledge":
+                    page = f"第 {item.source_page} 页；" if item.source_page else ""
+                    lines.append(f"  - 知识库出处：{_text(item.knowledge_document_id)}；{page}正文字符 {item.source_char_start}–{item.source_char_end}")
+                    lines.append(f"  - 资料版本 SHA-256：{_text(item.content_hash)}")
+        for warning in claim.retrieval_warnings:
+            lines.append(f"- 检索提示：{_text(warning)}")
     lines += ["", "---", "免责声明：该报告仅供复核和排序，不证明全文正确，也不替代专业判断。", ""]
     return "\n".join(lines)

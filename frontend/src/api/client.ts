@@ -1,4 +1,4 @@
-import type { ClaimDetail, ClaimPage, ReviewEvent, TaskCreated, TaskSummary, ServiceStatus } from '../types/api'
+import type { ClaimDetail, ClaimPage, ReviewEvent, TaskCreated, TaskSummary, ServiceStatus, KnowledgeStatus, KnowledgeDocument, KnowledgeHit } from '../types/api'
 
 const API_PREFIX = '/api'
 
@@ -28,9 +28,9 @@ async function responseError(response: Response): Promise<ApiError> {
 }
 
 /** Keep the deadline active until the complete response body has been read. */
-async function request<T>(url: string, init: RequestInit, read: (response: Response) => Promise<T>): Promise<T> {
+async function request<T>(url: string, init: RequestInit, read: (response: Response) => Promise<T>, timeoutMs = 20_000): Promise<T> {
   const controller = new AbortController()
-  const timeout = globalThis.setTimeout(() => controller.abort(), 20_000)
+  const timeout = globalThis.setTimeout(() => controller.abort(), timeoutMs)
   try {
     const response = await fetch(url, {
       ...init,
@@ -53,7 +53,7 @@ async function request<T>(url: string, init: RequestInit, read: (response: Respo
   }
 }
 
-async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> {
+async function requestJson<T>(path: string, init: RequestInit = {}, timeoutMs = 20_000): Promise<T> {
   const headers = new Headers(init.headers)
   if (!headers.has('Accept')) headers.set('Accept', 'application/json')
   if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
@@ -70,7 +70,7 @@ async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> 
       throw new ApiError('服务返回的数据格式异常，请稍后重试。', response.status, 'INVALID_RESPONSE')
     }
     return raw as T
-  })
+  }, timeoutMs)
 }
 
 /** Read a binary API response with the same timeout and errors as JSON requests. */
@@ -149,4 +149,48 @@ export function exportUrl(taskId: string, format: 'json' | 'md'): string {
 interface ClaimListItemResponse {
   claim_id: string
   state: string
+}
+
+export interface KnowledgeImport {
+  title: string
+  publisher: string | null
+  source_url: string | null
+  published_at: string | null
+  tags: string[]
+  content?: string
+  filename?: string
+  file_base64?: string
+}
+
+async function requestKnowledgeJson<T>(path: string, init: RequestInit = {}, timeoutMs = 20_000): Promise<T> {
+  try {
+    return await requestJson<T>(path, init, timeoutMs)
+  } catch (error: unknown) {
+    // Older running backends return FastAPI's generic 404 for every library
+    // route. A structured KB_NOT_FOUND means a particular source was deleted.
+    if (error instanceof ApiError && error.status === 404 && error.code === null) {
+      throw new ApiError('当前后端未加载知识库接口。请关闭旧后端并重新启动程序，然后刷新页面。', 404, 'KNOWLEDGE_API_UNAVAILABLE')
+    }
+    throw error
+  }
+}
+
+export function getKnowledgeStatus(): Promise<KnowledgeStatus> { return requestKnowledgeJson('/knowledge/status') }
+export function getKnowledgeDocuments(): Promise<{ items: KnowledgeDocument[]; total: number }> {
+  return requestKnowledgeJson('/knowledge/documents?limit=200')
+}
+export function getKnowledgeDocument(id: string): Promise<{ document: KnowledgeDocument; pages: string[] }> {
+  return requestKnowledgeJson(`/knowledge/documents/${encodeURIComponent(id)}`)
+}
+export function importKnowledgeDocument(body: KnowledgeImport): Promise<KnowledgeDocument> {
+  return requestKnowledgeJson('/knowledge/documents', { method: 'POST', body: JSON.stringify(body) }, 120_000)
+}
+export function deleteKnowledgeDocument(id: string): Promise<void> {
+  return requestKnowledgeJson(`/knowledge/documents/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}
+export function searchKnowledge(query: string, tag: string | null): Promise<{ items: KnowledgeHit[]; status: KnowledgeStatus; score_note: string }> {
+  return requestKnowledgeJson('/knowledge/search', { method: 'POST', body: JSON.stringify({ query, tag, limit: 10 }) })
+}
+export function reindexKnowledge(): Promise<{ indexed: number; remaining: number }> {
+  return requestKnowledgeJson('/knowledge/reindex', { method: 'POST' }, 120_000)
 }

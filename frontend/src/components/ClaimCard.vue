@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import type { ClaimDetail, ClaimLabel, ClaimListItem, ClaimState } from '../types/api'
 import EvidencePanel from './EvidencePanel.vue'
 import PaperCheckPanel from './PaperCheckPanel.vue'
@@ -8,6 +8,8 @@ const props = defineProps<{ claim: ClaimListItem; detail: ClaimDetail | null; lo
 const emit = defineEmits<{ open: [claimId: string]; retry: [claimId: string]; edit: [claimId: string, text: string]; remove: [claimId: string] }>()
 const editing = ref(false)
 const draft = ref(props.claim.normalized_claim)
+const editor = ref<HTMLTextAreaElement | null>(null)
+const reviewSummary = ref<HTMLElement | null>(null)
 const queries = computed(() => [...new Set(props.detail?.queries ?? [])])
 const evidenceCount = computed(() => props.detail?.evidence_clusters.reduce((sum, cluster) => sum + cluster.items.length, 0))
 
@@ -24,6 +26,18 @@ const stateText: Record<ClaimState, string> = {
   pending: '等待处理', extracting: '抽取中', retrieving: '检索中', judging: '判断中',
   done: '处理完成', failed: '处理失败，尚未核验', unchecked: '尚未核验',
 }
+async function startEditing(): Promise<void> {
+  draft.value = props.claim.normalized_claim
+  editing.value = true
+  await nextTick()
+  editor.value?.focus()
+}
+async function finishEditing(save: boolean): Promise<void> {
+  if (save) emit('edit', props.claim.claim_id, draft.value)
+  editing.value = false
+  await nextTick()
+  reviewSummary.value?.focus()
+}
 
 </script>
 
@@ -37,28 +51,29 @@ const stateText: Record<ClaimState, string> = {
       </div>
       <h3>{{ claim.normalized_claim }}</h3>
       <div v-if="claim.manually_edited" class="manual-edit-note"><b>人工修改的声明</b><span>原文（UTF-16 {{ claim.char_start }}–{{ claim.char_end }}）：{{ claim.source_text }}</span><small>修改后的文字用于检索，不是原文逐字摘录。</small></div>
-      <div v-if="editable" class="claim-review-actions">
-        <div class="claim-review-heading">
+      <details v-if="editable" class="claim-review-actions" :open="editing || standalone">
+        <summary ref="reviewSummary" class="claim-review-heading">
           <strong>人工复核</strong>
           <span>断句或表述需要调整时，可在这里处理</span>
-        </div>
+        </summary>
         <div v-if="!editing" class="claim-review-buttons">
-          <button type="button" class="claim-action-button claim-action-edit" :disabled="reviewDisabled" @click="draft = claim.normalized_claim; editing = true"><span aria-hidden="true">✎</span> 修改声明</button>
+          <button type="button" class="claim-action-button claim-action-edit" :disabled="reviewDisabled" @click="startEditing"><span aria-hidden="true">✎</span> 修改声明</button>
           <button type="button" class="claim-action-button claim-action-delete" :disabled="removeDisabled || reviewDisabled" @click="emit('remove', claim.claim_id)"><span aria-hidden="true">×</span> {{ removeDisabled ? '正在删除…' : '删除声明' }}</button>
         </div>
         <div v-else class="claim-review-editor">
           <label :for="`claim-edit-${claim.claim_id}`">修改后的声明</label>
-          <textarea :id="`claim-edit-${claim.claim_id}`" v-model="draft" :disabled="reviewDisabled" maxlength="2000" rows="3"></textarea>
+          <textarea :id="`claim-edit-${claim.claim_id}`" ref="editor" v-model="draft" :disabled="reviewDisabled" maxlength="2000" rows="3"></textarea>
           <div class="claim-review-buttons">
-            <button type="button" class="claim-action-button claim-action-edit" :disabled="reviewDisabled || !draft.trim()" @click="emit('edit', claim.claim_id, draft); editing = false">保存修改</button>
-            <button type="button" class="claim-action-button claim-action-cancel" @click="editing = false">取消</button>
+            <button type="button" class="claim-action-button claim-action-edit" :disabled="reviewDisabled || !draft.trim()" @click="finishEditing(true)">保存修改</button>
+            <button type="button" class="claim-action-button claim-action-cancel" @click="finishEditing(false)">取消</button>
           </div>
         </div>
         <small class="claim-review-note">修改表述会清除旧判断并标记为未核验；删除后可在操作记录中撤销。</small>
-      </div>
+      </details>
       <p v-if="claim.label === 'evidence_insufficient'" class="claim-caution">当前材料不足以判断该声明；这不表示声明为假。</p>
       <p v-else-if="claim.label === 'disputed' || claim.label === 'incorrect'" class="claim-caution risk">该声明存在反向或冲突证据，请重点核对来源质量与适用条件。</p>
       <p class="reason">{{ claim.reason || '尚无判断说明。' }}</p>
+      <p v-for="warning in claim.retrieval_warnings ?? []" :key="warning" class="claim-caution">{{ warning }}</p>
       <div class="claim-foot">
         <span>状态：{{ stateText[claim.state] }}</span>
         <span v-if="claim.support_score !== null">支持指数 {{ claim.support_score }}</span>
@@ -68,7 +83,7 @@ const stateText: Record<ClaimState, string> = {
       <div v-if="standalone" class="claim-detail">
         <div v-if="loading || retrying" class="loading-line">{{ retrying ? '正在重新检索，完成后更新证据…' : '正在读取证据…' }}</div>
         <template v-else-if="detail">
-          <div class="evidence-heading">网页检索内容 <span>{{ evidenceCount }} 条</span></div>
+          <div class="evidence-heading">核验证据 · 网页与知识库 <span>{{ evidenceCount }} 条</span></div>
           <PaperCheckPanel v-if="detail.paper_check" :paper="detail.paper_check" />
           <EvidencePanel :clusters="detail.evidence_clusters" />
           <details class="retrieval-details">
