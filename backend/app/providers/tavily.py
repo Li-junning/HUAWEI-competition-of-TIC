@@ -11,6 +11,7 @@ import json
 import math
 import os
 import random
+import re
 import time
 from collections.abc import Callable
 from datetime import datetime, timezone
@@ -50,12 +51,15 @@ class TavilySearchProvider:
         *,
         transport: httpx.BaseTransport | None = None,
         sleep: Callable[[float], None] = time.sleep,
+        search_depth: str | None = None,
     ) -> None:
         self._api_key = api_key or os.getenv("SEARCH_API_KEY")
         if not self._api_key:
             raise LiveProviderNotConfigured("Tavily search key is not configured")
         self._transport = transport
         self._sleep = sleep
+        depth = search_depth or os.getenv("TAVILY_SEARCH_DEPTH", "advanced")
+        self._search_depth = depth if depth in {"basic", "advanced"} else "advanced"
 
     def search(self, query: str, *, limit: int = 5, deadline: float | None = None) -> list[SearchResult]:
         return asyncio.run(self._search_async(query, limit=limit, deadline=deadline))
@@ -64,17 +68,28 @@ class TavilySearchProvider:
         cleaned_query = " ".join(query.split())
         if not cleaned_query:
             return []
+        domains = []
+        # Translate our source-discovery suffix into native API filters.
+        # Boolean site operators in query text are not reliably enforced.
+        scoped = re.fullmatch(r"(.+?)\s+\((site:[A-Za-z0-9.-]+(?: OR site:[A-Za-z0-9.-]+)*)\)", cleaned_query)
+        if scoped:
+            cleaned_query = scoped.group(1)
+            domains = re.findall(r"site:([A-Za-z0-9.-]+)", scoped.group(2))[:5]
         # Bound each query so it leaves time for other searches and judgment.
         deadline = min(deadline if deadline is not None else math.inf,
                        time.monotonic() + TOTAL_TIMEOUT_SECONDS)
         payload = {
             "query": cleaned_query,
-            "search_depth": "basic",
+            "search_depth": self._search_depth,
             "max_results": min(max(limit, 1), 5),
             "include_answer": False,
             "include_images": False,
             "include_raw_content": "text",
         }
+        if self._search_depth == "advanced":
+            payload["chunks_per_source"] = 3
+        if domains:
+            payload["include_domains"] = domains
         headers = {"Authorization": f"Bearer {self._api_key}", "Content-Type": "application/json"}
 
         for attempt in range(MAX_RETRIES + 1):

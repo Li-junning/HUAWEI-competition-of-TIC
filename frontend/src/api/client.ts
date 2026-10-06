@@ -1,6 +1,9 @@
 import type { ClaimDetail, ClaimPage, ReviewEvent, TaskCreated, TaskSummary, ServiceStatus, KnowledgeStatus, KnowledgeDocument, KnowledgeHit } from '../types/api'
 
 const API_PREFIX = '/api'
+let csrfToken: string | null = null
+export interface AuthSession { required: boolean; authenticated: boolean; csrf_token: string | null }
+export function setCsrfToken(token: string | null): void { csrfToken = token }
 
 export class ApiError extends Error {
   readonly code: string | null
@@ -32,12 +35,20 @@ async function request<T>(url: string, init: RequestInit, read: (response: Respo
   const controller = new AbortController()
   const timeout = globalThis.setTimeout(() => controller.abort(), timeoutMs)
   try {
+    const headers = new Headers(init.headers)
+    if (csrfToken && !['GET', 'HEAD', 'OPTIONS'].includes((init.method ?? 'GET').toUpperCase())) headers.set('X-CSRF-Token', csrfToken)
     const response = await fetch(url, {
       ...init,
+      headers,
+      credentials: 'same-origin',
       signal: controller.signal,
     })
     if (!response.ok) {
       const error = await responseError(response)
+      if (error.code === 'AUTH_REQUIRED' || error.code === 'CSRF_REJECTED') {
+        csrfToken = null
+        globalThis.dispatchEvent?.(new Event('verifier:auth-required'))
+      }
       if (controller.signal.aborted) throw new DOMException('Request timed out', 'AbortError')
       throw error
     }
@@ -52,6 +63,12 @@ async function request<T>(url: string, init: RequestInit, read: (response: Respo
     globalThis.clearTimeout(timeout)
   }
 }
+
+export function getAuthSession(): Promise<AuthSession> { return requestJson<AuthSession>('/auth/session') }
+export function loginWorkspace(password: string): Promise<AuthSession> {
+  return requestJson<AuthSession>('/auth/login', { method: 'POST', headers: { 'X-Verifier-Request': '1' }, body: JSON.stringify({ password }) })
+}
+export function logoutWorkspace(): Promise<{ authenticated: boolean }> { return requestJson('/auth/logout', { method: 'POST' }) }
 
 async function requestJson<T>(path: string, init: RequestInit = {}, timeoutMs = 20_000): Promise<T> {
   const headers = new Headers(init.headers)

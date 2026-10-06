@@ -160,7 +160,7 @@ async def retry_claim(claim_id: str, background_tasks: BackgroundTasks, pipeline
     if error == "RETRY_LIMIT":
         return safe_error("RETRY_LIMIT", "该声明已达到最大重试次数", 409)
     if error == "RETRY_NOT_ALLOWED":
-        return safe_error("RETRY_NOT_ALLOWED", "只有证据不足或技术失败的声明可重试", 409)
+        return safe_error("RETRY_NOT_ALLOWED", "只有证据不足、检索未完成、技术失败或可继续处理的未核验声明可重试；指代不明需先修改。", 409)
     if error == "TASK_BUSY":
         return safe_error("TASK_BUSY", "该任务仍在处理中，请等待完成后再重试", 409)
     assert claim is not None

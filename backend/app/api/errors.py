@@ -12,7 +12,8 @@ logger = logging.getLogger("verifier")
 
 def safe_error(code: str, message: str, status: int = 400) -> JSONResponse:
     request_id = f"r_{uuid4()}"
-    return JSONResponse(status_code=status, content={"error": {"code": code, "message": message, "request_id": request_id}})
+    return JSONResponse(status_code=status, content={"error": {"code": code, "message": message, "request_id": request_id}},
+                        headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
 
 
 async def http_error(_: Request, exc: HTTPException):
@@ -32,7 +33,8 @@ async def validation_error(request: Request, exc: RequestValidationError):
 
 async def unexpected_error(_: Request, exc: Exception):
     # Deliberately do not expose stack traces, paths, SQL or provider responses.
-    logger.exception("request failed: %s", type(exc).__name__)
+    # Exception messages/tracebacks can contain user input or provider credentials.
+    logger.error("request failed: exception_type=%s", type(exc).__name__)
     return safe_error("INTERNAL_ERROR", "服务暂时不可用，请稍后重试。", 500)
 
 

@@ -1,6 +1,6 @@
 import { createApp } from 'vue'
-import App from './App.vue'
+import AccessGate from './AccessGate.vue'
 import './style.css'
 import './workspace.css'
 
-createApp(App).mount('#app')
+createApp(AccessGate).mount('#app')

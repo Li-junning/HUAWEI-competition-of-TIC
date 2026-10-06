@@ -1,0 +1,29 @@
+[Unit]
+Description=Private AI answer verifier
+After=network.target
+
+[Service]
+Type=simple
+User=verifier
+Group=verifier
+WorkingDirectory=/srv/verifier/app/backend
+# Root-owned mode 0600 file; contains production settings and provider credentials.
+EnvironmentFile=/etc/verifier/verifier.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/srv/verifier/app/backend/.venv/bin/python /srv/verifier/app/backend/scripts/serve_production.py
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/verifier/data
+MemoryMax=2G
+CPUQuota=200%
+TasksMax=96
+LimitNOFILE=1024
+TimeoutStopSec=210
+
+[Install]
+WantedBy=multi-user.target

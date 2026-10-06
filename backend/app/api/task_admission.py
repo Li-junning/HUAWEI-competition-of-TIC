@@ -22,7 +22,8 @@ class TaskAdmissionLimit:
     async def __call__(self, scope: dict, receive: Any, send: Any) -> None:
         path = scope.get("path", "")
         costly = (scope["type"] == "http" and scope["method"] == "POST" and
-                  (path == "/api/tasks" or (path.startswith("/api/claims/") and path.endswith("/retry"))))
+                  (path == "/api/tasks" or path in {"/api/knowledge/documents", "/api/knowledge/search", "/api/knowledge/reindex"}
+                   or (path.startswith("/api/claims/") and path.endswith("/retry"))))
         if not costly:
             await self.app(scope, receive, send)
             return

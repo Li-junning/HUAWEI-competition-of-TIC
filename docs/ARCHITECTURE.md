@@ -10,6 +10,7 @@
 
 ```text
 Browser
+  -> HTTPS proxy + AccessBoundary (private-workspace sessions, CSRF, hosts)
   -> FastAPI routes (validation, rate/size limits, safe errors)
   -> Task service (state machine, budgets, bounded concurrency)
   -> Extraction / Retrieval / Citation / Judgment services
@@ -56,6 +57,8 @@ Markdown 导出对用户原文、标题、发布方和片段中的 HTML 做转�
 
 - `main.py`：仅暴露 ASGI 应用，保持 `uvicorn app.main:app` 启动方式。
 - `application.py`：`create_app()` 应用工厂，注册路由、中间件和错误处理；在 lifespan 内创建数据库连接及流水线，关闭时释放连接，启动失败也会释放连接。
+- `access.py`：本地仅回环，生产模式检查 HTTPS/域名/密码配置；所有业务接口要求工作区会话，写入校验 CSRF 与 Origin。此版本为私有共享工作区，账户隔离尚未实现，详见 `PRODUCTION_DEPLOYMENT.md`。
+- `document_worker.py`：独立文档解析进程，限制 PDF 解压、对象和页数；父进程限制解析并发和超时，Linux 额外限制内存/CPU。
 - `api/dependencies.py`：从当前应用解析流水线依赖，避免路由依赖进程级数据库单例。
 - `api/tasks.py`：任务、声明、重试、导出接口及 HTTP 参数校验。
 - `api/status.py`：供应商配置状态接口，不主动发起外部探测。
@@ -63,6 +66,8 @@ Markdown 导出对用户原文、标题、发布方和片段中的 HTML 做转�
 - `schemas.py`：API 与 provider 结构化输出的唯一 Pydantic 契约。
 - `storage.py`：SQLite 生命周期、持久化和重启时 `running -> interrupted`。
 - `pipeline.py`：状态机、每任务预算、有界并发、部分失败和重试。
+- 任务内独立声明由有界线程池执行，所有任务共享搜索槽位；槽位排队计入截止时间，启用判断模型时为判断预留时间。声明首次写入顺序保留，后续更新使用 SQLite upsert，不因并发完成顺序改变原文列表顺序。
+- 上传资料未认证出处，不参与裁决强度；部分网页查询失败也必须公开警告、保持任务部分完成并隐藏总分。最终单条指数随声明保存，旧报告读取时按同一规则派生。
 - `summaries.py`：集中组装任务摘要，供执行结果、查询和导出复用；评分门槛仍由 `scoring.py` 决定。
 - `extract.py`：声明拆分、分类和 UTF-16 位置转换。
 - `retrieve.py`：查询计划、证据规范化、聚类和安全抓取入口。
@@ -75,6 +80,7 @@ Markdown 导出对用户原文、标题、发布方和片段中的 HTML 做转�
 前端职责：
 
 - `App.vue`：页面组合、模板和事件绑定。
+- `AccessGate.vue`：先检查会话，再挂载工作区，提供密码登录/退出；会话失效时销毁工作区。CSRF token 只放内存，不放 localStorage。
 - `composables/useVerificationTask.ts`：任务提交、轮询、详情缓存、重试、导出和会话重置；作用域销毁时停止后续轮询。
 - `composables/useClaimFilters.ts`：标签筛选、风险排序及展示列表，不修改原始声明顺序。
 - `composables/useServiceStatus.ts`：读取服务状态及失败提示。

@@ -46,6 +46,9 @@ class Settings:
     live_providers: bool = False
     scoring_rules_version: str = "heuristic-v1"
     allowed_origins: tuple[str, ...] = ("http://localhost:5173", "http://127.0.0.1:5173")
+    environment: str = "local"
+    password_hash: str = ""
+    allowed_hosts: tuple[str, ...] = ("localhost", "127.0.0.1", "[::1]", "testserver")
 
 
 def get_settings() -> Settings:
@@ -66,4 +69,7 @@ def get_settings() -> Settings:
         max_concurrency=_int_env("VERIFIER_MAX_CONCURRENCY", 3, 1, 3),
         live_providers=os.getenv("VERIFIER_LIVE_PROVIDERS", "").lower() in {"1", "true", "yes"},
         allowed_origins=allowed_origins,
+        environment=os.getenv("VERIFIER_ENV", "local").lower(),
+        password_hash=os.getenv("VERIFIER_PASSWORD_HASH", ""),
+        allowed_hosts=tuple(host.strip() for host in os.getenv("VERIFIER_ALLOWED_HOSTS", "localhost,127.0.0.1,[::1]").split(",") if host.strip()),
     )

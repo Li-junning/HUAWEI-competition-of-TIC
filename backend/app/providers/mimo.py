@@ -21,11 +21,11 @@ from uuid import uuid4
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from ..schemas import EvidenceRelation
-from ..claim_segmentation import atomic_spans, verification_parts
+from ..schemas import EvidenceCheck, EvidenceRelation
+from ..claim_segmentation import judgment_parts
 from ..evidence_alignment import alignment_problem, explicit_property_refutation, literal_support
 from ..diagnostics import audit
-from ..security import evidence_prompt_boundary, validate_evidence_reference
+from ..security import evidence_prompt_boundary, ground_evidence_quote, validate_evidence_reference
 from .base import LiveProviderNotConfigured, JudgmentProviderError
 from .network import network_permission_denied
 
@@ -254,6 +254,7 @@ class MiMoEvidenceJudge:
         for item in items.values():
             item.relation = EvidenceRelation.UNKNOWN
             item.relevance = item.time_fit = 0.0
+            item.checks = []
         for decision in payload.decisions:
             if decision.evidence_id not in candidates:
                 continue
@@ -262,12 +263,15 @@ class MiMoEvidenceJudge:
             if counts[decision.evidence_id] != 1:
                 item.quality_reason = f"{item.quality_reason or ''}；模型重复返回同一证据 ID，未采纳"
                 continue
+            decision.excerpt = ground_evidence_quote(decision.evidence_id, decision.excerpt, candidates)
+            for check in decision.checks:
+                check.excerpt = ground_evidence_quote(decision.evidence_id, check.excerpt, candidates)
             if decision.relation in {EvidenceRelation.SUPPORTS, EvidenceRelation.REFUTES, EvidenceRelation.PARTIALLY_SUPPORTS}:
                 if not decision.excerpt or not validate_evidence_reference(decision.evidence_id, decision.excerpt, candidates):
                     item.quality_reason = f"{item.quality_reason or ''}；模型引用未通过原文定位校验"
                     continue
             relation = decision.relation
-            if decision.checks and relation in {EvidenceRelation.SUPPORTS, EvidenceRelation.REFUTES, EvidenceRelation.PARTIALLY_SUPPORTS}:
+            if decision.checks:
                 valid: dict[int, EvidenceRelation] = {}
                 malformed = (len({check.part_id for check in decision.checks}) != len(decision.checks)
                              or any(check.part_id > len(parts) for check in decision.checks))
@@ -278,6 +282,12 @@ class MiMoEvidenceJudge:
                     checked, problem = _checked_relation(check, decision.evidence_id, candidates,
                                                          parts[check.part_id - 1], whole_claim=whole_claim)
                     valid[check.part_id] = checked
+                    item.checks.append(EvidenceCheck(
+                        part_id=check.part_id, part_text=parts[check.part_id - 1],
+                        relation=checked, excerpt=check.excerpt if checked in {
+                            EvidenceRelation.SUPPORTS, EvidenceRelation.REFUTES,
+                            EvidenceRelation.PARTIALLY_SUPPORTS} else None,
+                    ))
                     if problem:
                         notes.append(f"核对项{check.part_id}：{problem}")
                 # A supported first half cannot overrule a contradicted second
@@ -296,6 +306,9 @@ class MiMoEvidenceJudge:
                     note = "；".join(notes) or ("证据未逐项覆盖整条声明" if relation == EvidenceRelation.PARTIALLY_SUPPORTS else "逐项核对已完成")
             elif len(parts) == 1:
                 relation, note = _checked_relation(decision, decision.evidence_id, candidates, parts[0], whole_claim=whole_claim)
+                if relation in {EvidenceRelation.SUPPORTS, EvidenceRelation.REFUTES}:
+                    item.checks = [EvidenceCheck(part_id=1, part_text=parts[0],
+                                                 relation=relation, excerpt=decision.excerpt)]
             elif len(parts) > 1 and relation == EvidenceRelation.SUPPORTS:
                 relation, note = EvidenceRelation.PARTIALLY_SUPPORTS, "证据未逐项覆盖整条声明"
             elif len(parts) > 1 and relation == EvidenceRelation.REFUTES:
@@ -307,7 +320,9 @@ class MiMoEvidenceJudge:
             elif not parts and relation in {EvidenceRelation.SUPPORTS, EvidenceRelation.REFUTES}:
                 relation, note = EvidenceRelation.UNKNOWN, "缺少待核对声明，未采纳直接判断"
             item.relation = relation
-            item.relevance = 0.9 if relation in {EvidenceRelation.SUPPORTS, EvidenceRelation.REFUTES} else 0.6 if relation == EvidenceRelation.PARTIALLY_SUPPORTS else 0.0
+            has_direct_check = any(check.relation in {EvidenceRelation.SUPPORTS, EvidenceRelation.REFUTES}
+                                   for check in item.checks)
+            item.relevance = 0.9 if has_direct_check or relation in {EvidenceRelation.SUPPORTS, EvidenceRelation.REFUTES} else 0.6 if relation == EvidenceRelation.PARTIALLY_SUPPORTS else 0.0
             # Relationship classification does not verify publication date or
             # freshness.  Keep time fit neutral unless a separate check exists.
             item.time_fit = 0.5 if relation in {EvidenceRelation.SUPPORTS, EvidenceRelation.REFUTES, EvidenceRelation.PARTIALLY_SUPPORTS} else 0.0
@@ -350,9 +365,7 @@ def _checked_relation(check: Any, evidence_id: str, candidates: dict[str, str], 
 
 
 def _claim_parts(text: str) -> list[str]:
-    atoms = atomic_spans(text)
-    parts = [part.normalized for part in atoms] if len(atoms) > 1 else verification_parts(text)
-    return parts[:7] + ["".join(parts[7:])] if len(parts) > 8 else parts
+    return judgment_parts(text)
 
 
 def _messages_for(claim: Any, clusters: Sequence[Any]) -> list[dict[str, str]]:
@@ -382,6 +395,7 @@ def _messages_for(claim: Any, clusters: Sequence[Any]) -> list[dict[str, str]]:
         '"alignment":{"entity":"match|mismatch|unknown","predicate":"match|mismatch|unknown","scope":"match|mismatch|unknown","value":"match|conflict|unknown"}}]}]}。'
         "每个 evidence_id 最多出现一次。只有 supports、refutes、partially_supports 时才可填写 excerpt，且 excerpt 必须逐字复制自对应证据文本；无法确认时 relation=unknown、excerpt=null。"
         "引用选取最短的充分片段，必须保留能识别主体的上下文、数值单位、否定及条件；不能截掉限定词。理由不超过40字。"
+        "若相邻前句明确约定同一指标的适用条件，引用可以包括这两句，不能因后句未重复条件就弃判。引用保持原文单位符号、标点和空格。"
         "标题、发布方和来源说明仅是定位线索，不能替代正文证明事实；发布日期不是事件发生日期，也不能自动证明当前仍有效。"
         "supports 必须支持整条声明的所有事实、数值、地点、时间及限定，不能因同一主体或前半句成立就支持整句。"
         "只支持部分事实用 partially_supports；缺少信息不是反驳；在同一条件下明确否定任一关键事实才是 refutes。"
@@ -390,6 +404,10 @@ def _messages_for(claim: Any, clusters: Sequence[Any]) -> list[dict[str, str]]:
         "无论一项还是多项，每条 decisions 都必须返回全部核对项的 checks；part_id 与用户数据对应，不能重复或省略。"
         "entity 核对同一主体身份；predicate 核对同一行为或属性；scope 核对时间、条件、统计口径、地域层级及量词；value 核对答案和极性。"
         "前三维确认为同一对象才填 match，明确不一致填 mismatch，缺少信息填 unknown。"
+        "对未限定年份且本身稳定的地理、历史、定义和科学事实，不要求证据另写观察年份；双方没有额外冲突条件时 scope=match。"
+        "主体全称与明确简称、主动与被动表述、属性同义词、等价单位及语序不同都可语义匹配，不能只因未逐字复述就填 unknown。"
+        "陈述 A 和 B 的整句可以由不同网页分别证明；每条证据只为它实际证明的项填写 supports，其余项如实填 unknown。"
+        "全称声明可由同一对象集合中的明确反例反驳，不要求反例也使用全称量词；但部分实例不能支持全称。"
         "value 只有直接支持答案填 match，同一范围内明确互斥填 conflict，未提及或不能比较填 unknown。"
         "supports 要求四维均为 match；refutes 要求前三维为 match 且 value=conflict；仅相关或信息缺失不能填 refutes。"
         "同一数字但不同单位不相等；等价单位换算不构成反驳；研发投入与营收、就读与毕业、出生与任职等不能相互替代。"

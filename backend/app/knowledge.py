@@ -13,6 +13,8 @@ import os
 import threading
 import time
 import zipfile
+import subprocess
+import sys
 from pathlib import Path
 
 from .knowledge_schemas import KnowledgeDocument, KnowledgeHit, KnowledgeImport
@@ -26,6 +28,32 @@ MAX_CHUNKS = 5000
 MAX_FILE_BYTES = 2 * 1024 * 1024
 MAX_DOCX_EXPANDED_BYTES = 32 * 1024 * 1024
 MAX_DOCX_BODY_BYTES = 8 * 1024 * 1024
+_PARSER_SLOTS = threading.BoundedSemaphore(2)
+
+
+def _read_document_isolated(data: bytes, kind: str) -> list[str]:
+    if not _PARSER_SLOTS.acquire(timeout=1):
+        raise KnowledgeError("KB_PARSER_BUSY", "文档解析繁忙，请稍后重试。", 429)
+    try:
+        # No provider credentials or application secrets are passed to the parser.
+        env = {key: value for key, value in os.environ.items()
+               if key.upper() in {"SYSTEMROOT", "WINDIR", "TEMP", "TMP", "LANG"}}
+        result = subprocess.run(
+            [sys.executable, "-I", str(Path(__file__).with_name("document_worker.py")), kind],
+            input=data, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=15,
+            env=env, creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
+        )
+        if result.returncode != 0:
+            raise KnowledgeError("KB_PARSE_LIMIT", "文档解析超过资源限制，请拆分或粘贴正文。", 413)
+        payload = json.loads(result.stdout)
+        if "error" in payload:
+            error = payload["error"]
+            raise KnowledgeError(error["code"], error["message"], error["status"])
+        return payload["pages"]
+    except subprocess.TimeoutExpired:
+        raise KnowledgeError("KB_PARSE_TIMEOUT", "文档解析超时，请拆分或粘贴正文。", 413) from None
+    finally:
+        _PARSER_SLOTS.release()
 
 
 class KnowledgeError(ValueError):
@@ -145,26 +173,9 @@ def _read_pages(request: KnowledgeImport) -> list[str]:
                 raise KnowledgeError("KB_ENCODING", "TXT / Markdown 请使用 UTF-8 编码。") from None
             pages = [text.replace("\r\n", "\n").replace("\r", "\n")]
         elif suffix == ".pdf":
-            try:
-                from pypdf import PdfReader
-                reader = PdfReader(io.BytesIO(data))
-                if reader.is_encrypted:
-                    raise KnowledgeError("KB_PDF_ENCRYPTED", "请先解密 PDF 再导入。")
-                if len(reader.pages) > 100:
-                    raise KnowledgeError("KB_PDF_LIMIT", "单个 PDF 最多 100 页，请拆分后导入。")
-                pages = []
-                for page in reader.pages:
-                    pages.append((page.extract_text() or "").replace("\r\n", "\n"))
-                    if sum(map(len, pages)) > 100_000:
-                        raise KnowledgeError("KB_TEXT_LIMIT", "提取正文超过 100,000 字符，请拆分资料。", 413)
-            except KnowledgeError:
-                raise
-            except ImportError:
-                raise KnowledgeError("KB_PDF_UNAVAILABLE", "请先安装后端 PDF 依赖 pypdf。", 503) from None
-            except Exception:
-                raise KnowledgeError("KB_PDF_INVALID", "无法读取此 PDF，请检查文件或粘贴正文。") from None
+            pages = _read_document_isolated(data, "pdf")
         elif suffix == ".docx":
-            pages = [_read_docx(data)]
+            pages = _read_document_isolated(data, "docx")
         elif suffix == ".doc":
             raise KnowledgeError("KB_WORD_LEGACY", "旧版 .doc 请先在 Word 中另存为 .docx 后导入。")
         else:

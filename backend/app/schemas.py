@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -114,6 +114,16 @@ class UndoReviewRequest(BaseModel):
     reviewer: str = Field(min_length=1, max_length=40)
 
 
+class EvidenceCheck(BaseModel):
+    """A quote and relation accepted by the server's per-fact validation."""
+
+    model_config = ConfigDict(extra="forbid")
+    part_id: int = Field(ge=1, le=8)
+    part_text: str
+    relation: EvidenceRelation
+    excerpt: str | None = Field(default=None, max_length=1000)
+
+
 class EvidenceItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
     evidence_id: str
@@ -124,6 +134,7 @@ class EvidenceItem(BaseModel):
     retrieved_at: datetime | None = None
     excerpt: str | None = None
     relation: EvidenceRelation = EvidenceRelation.UNKNOWN
+    checks: list[EvidenceCheck] = Field(default_factory=list, max_length=8)
     quality_reason: str | None = None
     is_reprint: bool = False
     content_hash: str | None = None
@@ -180,6 +191,7 @@ class Claim(BaseModel):
     type: str = "general"
     normalized_claim: str
     manually_edited: bool = False
+    unchecked_reason: Literal["task_budget", "unresolved_reference"] | None = None
     entities: list[str] = Field(default_factory=list)
     conditions: list[str] = Field(default_factory=list)
     queries: list[str] = Field(default_factory=list)

@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "engines": { "node": "^22.12.0 || ^24.0.0 || >=26.0.0" },
   "scripts": {
     "dev": "vite --config vite.config.ts --configLoader runner",
     "build": "vue-tsc --noEmit && vite build --config vite.config.ts --configLoader runner",
@@ -10,13 +11,14 @@
     "test": "vitest run --config vite.config.ts"
   },
   "dependencies": {
-    "@vitejs/plugin-vue": "^5.2.1",
-    "@vue/tsconfig": "^0.7.0",
-    "vite": "^6.0.5",
-    "vitest": "^2.1.8",
-    "vue": "^3.5.13",
-    "vue-tsc": "^2.2.0",
-    "typescript": "^5.7.2"
+    "vue": "^3.5.43"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.9",
+    "@vue/tsconfig": "^0.7.0",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.3",
+    "vitest": "^5.0.3",
+    "vue-tsc": "^2.2.12"
+  }
 }

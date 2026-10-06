@@ -23,7 +23,16 @@ def _kind(sentence: str) -> tuple[str, bool]:
     # Epistemic qualifiers do not make a claim an opinion: "可能发生" is
     # still a falsifiable claim.  Only explicit advice/opinion language is
     # excluded from factual verification.
-    if re.search(r"观点|建议|我认为|值得|应当(?:考虑|注意)|推荐", sentence):
+    # Discourse markers and institution names are not opinions. Only use this
+    # derived text for classification; original wording and offsets stay exact.
+    body = re.sub(r"^(?:(?:值得(?:注意|一提|关注)|需要(?:注意|说明))的是[，,\s]*|我认为[，,\s]*)", "", sentence)
+    advice = re.match(r"^(?:(?:我的|我们的)(?:观点|建议)(?:是|为)|(?:我|我们)(?:建议|推荐)|"
+                      r"(?:建议|推荐)(?=您|你|大家|我们|考虑|使用|采用|选择|购买|每天|每周|先|不要|避免|定期|进行|投资|睡|多|少)|"
+                      r"应当(?:考虑|注意))", body)
+    evaluation = re.search(r"值得(?:推荐|尝试|购买|信赖)|(?:最好|最优秀)的", body)
+    subjective_marker = re.match(r"^(?:我认为|我的观点|我们的观点)", sentence)
+    factual_predicate = re.search(r"成立于|创立于|位于|毕业于|出生于|发布(?:了|于)|人数(?:为|达到)|营收(?:为|达到)|公转|自转|属于|沸点|传播速度", body)
+    if advice or ((evaluation or subjective_marker) and not factual_predicate):
         return "opinion", False
     if re.search(r"论文|研究表明|期刊|DOI|doi", sentence, re.I):
         return "paper_citation", True
@@ -49,6 +58,7 @@ def extract_claims(text: str, task_id: str, limit: int = 15, *, spans: list[Text
         )
         if has_unresolved_reference(span.source, span.normalized):
             claim.state = ClaimState.UNCHECKED
+            claim.unchecked_reason = "unresolved_reference"
             claim.reason = "声明的指代对象无法从相邻原文唯一确定，未进行检索核验。"
         claims.append(claim)
     return claims, truncated

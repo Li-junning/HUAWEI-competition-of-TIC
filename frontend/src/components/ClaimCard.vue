@@ -3,6 +3,7 @@ import { computed, nextTick, ref } from 'vue'
 import type { ClaimDetail, ClaimLabel, ClaimListItem, ClaimState } from '../types/api'
 import EvidencePanel from './EvidencePanel.vue'
 import PaperCheckPanel from './PaperCheckPanel.vue'
+import { canRetryClaim } from '../utils/claimRetry'
 
 const props = defineProps<{ claim: ClaimListItem; detail: ClaimDetail | null; loading: boolean; retrying: boolean; retryDisabled?: boolean; standalone?: boolean; editable?: boolean; reviewDisabled?: boolean; removeDisabled?: boolean }>()
 const emit = defineEmits<{ open: [claimId: string]; retry: [claimId: string]; edit: [claimId: string, text: string]; remove: [claimId: string] }>()
@@ -94,8 +95,8 @@ async function finishEditing(save: boolean): Promise<void> {
             <ol v-if="queries.length" class="query-list"><li v-for="query in queries" :key="query">{{ query }}</li></ol>
             <p v-else class="detail-row">未记录检索词。</p>
           </details>
-          <div v-if="claim.label === 'evidence_insufficient' || claim.state === 'failed' || (claim.manually_edited && claim.state === 'unchecked')" class="retry-row">
-            <button type="button" class="secondary-button" :disabled="retrying || retryDisabled || claim.retry_count >= 2" @click="emit('retry', claim.claim_id)">{{ retrying ? '提交中…' : retryDisabled ? '任务处理中' : claim.retry_count >= 2 ? '已达重试上限' : '重新检索' }}</button>
+          <div v-if="canRetryClaim(claim)" class="retry-row">
+            <button type="button" class="secondary-button" :disabled="retrying || retryDisabled || claim.retry_count >= 2" @click="emit('retry', claim.claim_id)">{{ retrying ? '提交中…' : retryDisabled ? '任务处理中' : claim.retry_count >= 2 ? '已达重试上限' : claim.unchecked_reason === 'task_budget' ? '继续核验' : '重新检索' }}</button>
             <span>剩余 {{ Math.max(0, 2 - claim.retry_count) }} 次重试</span>
           </div>
         </template>

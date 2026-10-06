@@ -35,12 +35,19 @@ function knowledgeUrl(item: EvidenceItem): string {
             <span class="relation" :class="'relation-' + item.relation">{{ relationLabel(item.relation) }}</span>
             <span v-if="item.is_reprint" class="reprint-tag">转载</span>
             <a v-if="item.source_type === 'knowledge' && item.knowledge_document_id" :href="knowledgeUrl(item)" class="source-link">定位知识库原文 →</a>
-            <a v-if="safeExternalUrl(item.url)" :href="safeExternalUrl(item.url) ?? undefined" target="_blank" rel="noopener noreferrer" class="source-link">打开来源 ↗</a>
+            <a v-if="safeExternalUrl(item.url)" :href="safeExternalUrl(item.url) ?? undefined" target="_blank" rel="noopener noreferrer" class="source-link">{{ item.source_type === 'knowledge' ? '打开填写的出处 ↗' : '打开来源 ↗' }}</a>
           </div>
           <h4>{{ item.title || '无标题来源' }}</h4>
           <p class="source-meta">{{ item.publisher || '未知发布方' }} · 发布 {{ formatDate(item.published_at) }} · 取证 {{ formatDate(item.retrieved_at) }}</p>
           <p v-if="item.source_type === 'knowledge'" class="source-meta">我的知识库 · {{ item.source_page ? `第 ${item.source_page} 页 · ` : '' }}正文字符 {{ item.source_char_start }}–{{ item.source_char_end }} · 版本 {{ item.content_hash?.slice(0, 12) }}</p>
           <blockquote class="excerpt">{{ item.excerpt || '未返回可核查正文片段。' }}</blockquote>
+          <details v-if="item.checks?.length" class="evidence-checks">
+            <summary>逐项核对（{{ item.checks.length }} 项）</summary>
+            <div v-for="check in item.checks" :key="check.part_id">
+              <p><span class="relation" :class="'relation-' + check.relation">{{ relationLabel(check.relation) }}</span> {{ check.part_text }}</p>
+              <blockquote v-if="check.excerpt" class="excerpt">{{ check.excerpt }}</blockquote>
+            </div>
+          </details>
           <p class="quality-reason">来源说明：{{ item.quality_reason || '未提供' }}</p>
           <p class="raw-url">{{ safeExternalUrl(item.url) ?? (item.source_type === 'knowledge' ? '未填写外部出处；已保存本地原文片段与资料版本。' : '来源地址未通过 HTTP(S) 校验') }}</p>
         </article>

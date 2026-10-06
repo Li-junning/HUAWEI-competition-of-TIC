@@ -24,6 +24,26 @@ def _literal(text: str) -> str:
     return compact(text).strip("。.!！?？；;，,")
 
 
+def _scope_literal(text: str) -> str:
+    text = compact(text)
+    text = re.sub(r"(?:1|一)(?:个)?标准大气压|101\.325kpa|1atm", "标准大气压", text)
+    return re.sub(r"(?:在)?标准大气压(?:条件)?下", "标准大气压下", text)
+
+
+def _quote_clause(context: str, quote: str) -> str:
+    """Keep polarity local to the quoted clause, including a clipped prefix."""
+    start = context.find(quote)
+    if start < 0:
+        return context
+    end = start + len(quote)
+    boundaries = [match.start() for match in re.finditer(r"[，,；;]", context)
+                  if not (match.start() and match.end() < len(context)
+                          and context[match.start() - 1].isdigit() and context[match.end()].isdigit())]
+    left = max((position + 1 for position in boundaries if position < start), default=0)
+    right = min((position for position in boundaries if position >= end), default=len(context))
+    return context[left:right]
+
+
 _QUALIFIERS = re.compile(
     r"据称|传闻|网传|有人声称|可能|或许|预计|有望|计划|如果|假如|仅在|只有|只要|"
     r"在[^，,。；;]{1,25}(?:条件下|情况下|大气压下|期间)|"
@@ -49,7 +69,7 @@ _PARTICULAR = re.compile(r"部分|一些|有些|多数|\b(?:some|many|sometimes)
 _UNITS = {
     "亿元": ("CNY", "100000000"), "万元": ("CNY", "10000"), "元": ("CNY", "1"),
     "亿美元": ("USD", "100000000"), "万美元": ("USD", "10000"), "美元": ("USD", "1"),
-    "摄氏度": ("Celsius", "1"), "°c": ("Celsius", "1"),
+    "摄氏度": ("Celsius", "1"), "°c": ("Celsius", "1"), "oc": ("Celsius", "1"),
     "千米": ("length", "1000"), "公里": ("length", "1000"), "km": ("length", "1000"),
     "厘米": ("length", ".01"), "米": ("length", "1"),
     "千克": ("mass", "1"), "公斤": ("mass", "1"), "kg": ("mass", "1"), "克": ("mass", ".001"),
@@ -97,6 +117,7 @@ def _metric_subject(part: str, cues: tuple[str, ...]) -> str | None:
     prefix = target[:min(positions)]
     date = r"\d{4}年(?:\d{1,2}月(?:\d{1,2}日)?)?"
     prefix = re.sub(r"^(?:在|截至)?" + date + r"[，,]?", "", prefix)
+    prefix = re.sub(r"^在[^，,]{1,30}(?:条件下|情况下|大气压下|期间)[，,]", "", prefix)
     prefix = re.sub(r"(?:在|于)?" + date + r"的?$", "", prefix).removesuffix("的")
     if (not re.fullmatch(r"[\u3400-\u9fffA-Za-z0-9_-]{1,40}", prefix)
             or re.search(r"^(?:在|当|如果|由于|因为)|与|和|并|且|属于", prefix)):
@@ -109,7 +130,10 @@ def _metric_clauses(part: str, context: str, cues: tuple[str, ...]) -> list[str]
     cue = "|".join(re.escape(compact(value)) for value in cues)
     subject = _metric_subject(part, cues)
     date = r"(?:在|截至)?\d{4}年(?:\d{1,2}月(?:\d{1,2}日)?)?"
-    prefix = re.escape(subject) + r"(?:(?:在|于)?" + date + r")?的?" if subject else ""
+    names = ("纯净水", "蒸馏水", "纯水", "水") if subject == "水" else (subject,)
+    condition = r"(?:在|于)[^，,。；;]{1,25}(?:下|时|中)"
+    prefix = ("(?:" + "|".join(re.escape(name) for name in names) + ")"
+              + r"(?:(?:在|于)?" + date + "|" + condition + r")?的?") if subject else ""
     clauses = []
     all_metrics = "|".join(re.escape(compact(value)) for group in _METRICS for value in group)
     for match in re.finditer(prefix + r"(?:" + cue + r")", source):
@@ -132,6 +156,13 @@ def _metric_clauses(part: str, context: str, cues: tuple[str, ...]) -> list[str]
         if next_metric:
             right = match.end() + next_metric.start()
         clauses.append(source[left:right])
+    if subject:
+        names_pattern = "|".join(re.escape(name) for name in names)
+        units = "|".join(re.escape(unit) for unit in sorted(_UNITS, key=len, reverse=True))
+        inverse = r"\d+(?:\.\d+)?(?:" + units + r")(?:作为|是|为)(?:" + names_pattern + r")的?(?:" + cue + r")"
+        for match in re.finditer(inverse, source):
+            if _subject_boundary(source, match.start()):
+                clauses.append(match.group())
     return clauses
 
 
@@ -172,8 +203,9 @@ def _property_assertion(part: str, context: str, quote: str) -> tuple[str, str] 
     pattern = re.compile(
         re.escape(compact(slot.subject))
         + r"(?:的)?(?:(?:最终|最后|主要|通常|目前|曾经|已经|约)的?)*"
+        + (r"(?:(?:于|在)(?P<leading_date>\d{4}年(?:\d{1,2}月(?:\d{1,2}日)?)?))?" if slot.property_name == "成立时间" else "")
         + r"(?:" + cue + r")(?:于|在|为|是|：|:)?"
-        + r"([^，,。；;！？!?]+(?:[，,](?:而非|而不是|不是|并非|不在)[^，,。；;！？!?]+)?)", re.I,
+        + r"(?P<answer>[^，,。；;！？!?]*(?:[，,](?:而非|而不是|不是|并非|不在)[^，,。；;！？!?]+)?)", re.I,
     )
     # This binds the property to the same subject. A school name inside its
     # affiliated hospital's name cannot satisfy the school location check.
@@ -185,7 +217,11 @@ def _property_assertion(part: str, context: str, quote: str) -> tuple[str, str] 
         return ("", "")
     # Parse the claimed answer with the same property vocabulary.
     target = pattern.search(compact(part))
-    return (target.group(1).strip("。.!，,"), grounded[0].group(1).strip("。.!，,")) if target else None
+    def answer(match):
+        return (match.groupdict().get("leading_date") or match.group("answer")).strip("。.!，,")
+    if not target:
+        return None
+    return (answer(target), answer(grounded[0])) if answer(grounded[0]) else ("", "")
 
 
 def alignment_problem(part: str, text: str, quote: str, relation: EvidenceRelation, *, whole_claim: str = "") -> str | None:
@@ -198,15 +234,32 @@ def alignment_problem(part: str, text: str, quote: str, relation: EvidenceRelati
     if scope_only and relation == EvidenceRelation.REFUTES:
         return "条件短语不能脱离完整事实单独构成反证"
     for context in contexts:
-        extra_scope = [m.group() for m in _QUALIFIERS.finditer(context) if compact(m.group()) not in compact(claim_scope)]
+        # The immediately preceding sentence may explicitly define the
+        # measurement's condition (e.g. what "boiling point" means here).
+        # Inherit only a condition-only definition of the same metric; never
+        # borrow a time/place from another entity's assertion.
+        pos = text.find(context)
+        if text.find(context, pos + 1) >= 0:
+            pos = -1
+        preceding = candidate_spans(text[:pos]) if pos > 0 else []
+        if preceding and _REQUIRED_SCOPE.search(claim_scope):
+            previous = preceding[-1].source
+            metric_target = claim_scope if scope_only else part
+            same_metric = any(any(cue.casefold() in metric_target.casefold() for cue in group)
+                              and any(cue.casefold() in previous.casefold() for cue in group) for group in _METRICS)
+            defines_condition = re.search(r"^(?:通常|一般)(?:说的|所称的)?沸点[，,]?(?:都|均)?(?:是指|指)", compact(previous))
+            if same_metric and defines_condition and _REQUIRED_SCOPE.search(previous):
+                context = previous + context
+        extra_scope = [m.group() for m in _QUALIFIERS.finditer(context) if _scope_literal(m.group()) not in _scope_literal(claim_scope)]
         if extra_scope:
             return "引用上下文含原声明未覆盖的条件、推测或转述"
-        if any(compact(m.group()) not in compact(context) for m in _REQUIRED_SCOPE.finditer(claim_scope)):
+        if any(_scope_literal(m.group()) not in _scope_literal(context) for m in _REQUIRED_SCOPE.finditer(claim_scope)):
             return "证据未覆盖声明的适用条件"
-        if relation == EvidenceRelation.SUPPORTS and not scope_only and bool(_NEGATION.search(part)) != bool(_NEGATION.search(context)):
+        polarity_context = _quote_clause(context, quote)
+        if relation == EvidenceRelation.SUPPORTS and not scope_only and bool(_NEGATION.search(part)) != bool(_NEGATION.search(polarity_context)):
             return "引用上下文与声明的否定关系不一致"
         if (relation == EvidenceRelation.REFUTES and _literal(part) in _literal(quote)
-                and bool(_NEGATION.search(part)) == bool(_NEGATION.search(context))):
+                and bool(_NEGATION.search(part)) == bool(_NEGATION.search(polarity_context))):
             return "引用重复同一声明且未呈现否定，不能构成反证"
         if _CAUSAL.search(part) and not _CAUSAL.search(context):
             return "引用仅描述相关事实，未明确证明待核验的因果关系"
@@ -264,7 +317,7 @@ def alignment_problem(part: str, text: str, quote: str, relation: EvidenceRelati
                     return "目标指标的数值未获支持，不能借用其他指标的数据"
                 if relation == EvidenceRelation.REFUTES and not metric_values:
                     return "目标指标缺少可比较的数值，不能构成反证"
-                if relation == EvidenceRelation.REFUTES and required == metric_values and bool(_NEGATION.search(part)) == bool(_NEGATION.search(context)):
+                if relation == EvidenceRelation.REFUTES and required == metric_values and bool(_NEGATION.search(part)) == bool(_NEGATION.search(polarity_context)):
                     return "目标指标的等价数值不能构成反证"
         if required and not _COMPARISON.search(part):
             if relation == EvidenceRelation.SUPPORTS and not required.issubset(observed):
@@ -272,7 +325,7 @@ def alignment_problem(part: str, text: str, quote: str, relation: EvidenceRelati
             if relation == EvidenceRelation.REFUTES:
                 if not observed or {d for d, _ in required} != {d for d, _ in observed}:
                     return "不同单位、指标或缺少数值不能构成直接反证"
-                if required == observed and bool(_NEGATION.search(part)) == bool(_NEGATION.search(context)):
+                if required == observed and bool(_NEGATION.search(part)) == bool(_NEGATION.search(polarity_context)):
                     return "等价数值及单位不能构成反证"
     return None
 

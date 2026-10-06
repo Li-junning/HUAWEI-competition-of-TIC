@@ -6,6 +6,9 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
+
+from .access import AccessBoundary, validate_access_settings
 
 from .api import knowledge, status, tasks
 from .api.errors import register_error_handlers
@@ -23,6 +26,7 @@ def create_app(
     pipeline_factory: Callable[[Storage, Settings], Pipeline] = Pipeline,
 ) -> FastAPI:
     settings = settings if settings is not None else get_settings()
+    validate_access_settings(settings)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -36,16 +40,21 @@ def create_app(
             app.state.pipeline = None
             storage.close()
 
-    app = FastAPI(title="AI Answer Verifier API", version="0.1.0", lifespan=lifespan)
+    production = settings.environment == "production"
+    app = FastAPI(title="AI Answer Verifier API", version="0.1.0", lifespan=lifespan,
+                  docs_url=None if production else "/docs", redoc_url=None if production else "/redoc",
+                  openapi_url=None if production else "/openapi.json")
     app.add_middleware(TaskRequestBodyLimit)
     app.add_middleware(TaskAdmissionLimit, max_active=settings.max_concurrency)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=list(settings.allowed_origins),
-        allow_credentials=False,
+        allow_credentials=production,
         allow_methods=["GET", "POST", "PATCH", "DELETE"],
-        allow_headers=["Content-Type", "Accept"],
+        allow_headers=["Content-Type", "Accept", "X-CSRF-Token", "X-Verifier-Request"],
     )
+    app.add_middleware(AccessBoundary, settings=settings)
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(settings.allowed_hosts), www_redirect=False)
     register_error_handlers(app)
     app.include_router(status.router, prefix="/api")
     app.include_router(tasks.router, prefix="/api")

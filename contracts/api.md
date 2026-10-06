@@ -16,7 +16,15 @@ API 前缀为 `/api`，JSON 字段使用 `snake_case`。时间戳为带时区的
 
 来源链接由用户填写，仅做 HTTP(S) 与地址语法安全校验，不代表已认证出处；导入不会抓取任意 URL。详细机制与限制见 `docs/KNOWLEDGE_BASE.md`。
 
-`/api/` 请求无需访问令牌。创建任务请求体上限为 256 KiB，超过返回 `413 REQUEST_TOO_LARGE`。创建与重试共用每进程最多 3 个并发操作、每分钟 10 次的准入限制，超出返回 `429 TASK_RATE_LIMIT`。
+`source_type=knowledge` 的材料保留检索与逐项核对信息，但出处未核实，不进入裁决强度或支持指数。自填站点不计独立来源。网页的计划查询只完成部分时，失败也进入 `retrieval_warnings`；任务为 `partial`，总分为 `null`，已有证据保留。
+
+本地模式仅接受回环客户端。生产模式为私有共享工作区：所有业务 `/api/` 请求要求有效 HttpOnly/Secure/SameSite=Strict 会话 Cookie，未登录返回 `401 AUTH_REQUIRED`。所有写入同时要求 `X-CSRF-Token`，缺失或错误返回 `403 CSRF_REJECTED`；未配置的 Origin 或跨站写入返回 `403 ORIGIN_REJECTED`。所有 API 响应使用 `Cache-Control: no-store`。
+
+- `GET /api/auth/session`：返回 `{required,authenticated,csrf_token}`；未登录时 token 为 null。本地模式 required=false。
+- `POST /api/auth/login`：JSON `{password}`，必须带 `X-Verifier-Request: 1`；返回有效会话状态并设置 Cookie。密码错误返回 401，每进程每分钟最多 5 次尝试，超出返回 `429 LOGIN_RATE_LIMIT`；请求最多 8 KiB。
+- `POST /api/auth/logout`：要求有效 Cookie 与 CSRF token，立即撤销当前会话并删除 Cookie。会话最长 8 小时，服务进程重启后失效。
+
+所有 POST/PATCH/PUT/DELETE 的 `/api/` 请求体上限为 256 KiB，知识库导入单独为 4 MiB；超过返回 `413 REQUEST_TOO_LARGE`，没有 Content-Length 的流式请求同样受限。创建任务、重试、知识库导入、搜索、重建索引共用每进程最多 3 个并发操作（受配置限制）、每分钟 10 次的准入限制，超出返回 `429 TASK_RATE_LIMIT`。PDF/Word 在独立进程解析，最多同时 2 个、单次 15 秒，超时返回 `413 KB_PARSE_TIMEOUT`。详细资源限制见上线说明。
 
 ## 枚举
 
@@ -124,6 +132,8 @@ EvidenceRelation = supports | refutes | partially_supports | irrelevant | unknow
 
 `GET /api/claims/{claim_id}` 在列表项基础上返回 `evidence_clusters` 和可选 `paper_check`。每个证据项至少包含 `evidence_id/url/title/publisher/published_at/retrieved_at/excerpt/relation/quality_reason/is_reprint`，绝不包含网页 HTML。
 
+证据项可附带 `checks`（最多 8 项；旧数据默认为空数组），其中每项包含 `part_id`、`part_text`、`relation`、`excerpt`。这些是服务端完成引用定位和语义约束校验后的逐项结果，模型未通过校验的引用不会保留。单项文本必须与当前声明的核对项一致才可汇总；不同证据的部分支持可共同覆盖整句，但缺失项不能由其他项的来源数量补足。前端证据详情可展开逐项核对，JSON 导出同样包含这些字段。
+
 ## 人工复核声明
 
 任务结束后，`PATCH /api/claims/{claim_id}` 可修改 `normalized_claim`（1–2000 字符），请求体也可传 `reviewer`（审核人署名，最多 40 字符）。`source_text`、原文 UTF-16 区间和任务原文不变；为避免旧证据支持修改后的文字，服务会清空标签、分数、查询和证据，并把声明标记为 `unchecked`。返回项会带 `manually_edited: true`。用户可从声明详情重新检索修改后的文字；在该修改尚未重查时允许一次显式重试，重试使用现有任务/provider 调用预算。获得新结论后会遵循常规重试限制。`DELETE /api/claims/{claim_id}?reviewer=姓名` 会从任务列表、摘要计数和后续导出中移除此声明，但不会改写原文或其他声明。
@@ -138,11 +148,13 @@ EvidenceRelation = supports | refutes | partially_supports | irrelevant | unknow
 | `GET /api/tasks/{task_id}/review-history` | 无 | 按时间倒序返回操作类型、署名、时间、修改前后文字和撤销状态 |
 | `POST /api/tasks/{task_id}/review-history/{event_id}/undo` | `reviewer` | 按相反顺序撤销最近一次尚未撤销的操作 |
 
-撤销会恢复该操作前的声明及判断。若之后发生重新检索等状态变化，为避免覆盖新证据，返回 `409 STATE_CHANGED`。其他可能的冲突包括 `TASK_BUSY`、`INVALID_RANGE`、`CLAIM_LIMIT`、`UNDO_ORDER`。审核人署名由操作人输入，当前版本没有身份认证。
+撤销会恢复该操作前的声明及判断。若之后发生重新检索等状态变化，为避免覆盖新证据，返回 `409 STATE_CHANGED`。其他可能的冲突包括 `TASK_BUSY`、`INVALID_RANGE`、`CLAIM_LIMIT`、`UNDO_ORDER`。生产模式有工作区访问认证，但审核人署名仍由操作人输入，不代表独立账户身份。
 
 ## 重试
 
-`POST /api/claims/{claim_id}/retry` 只允许对 `evidence_insufficient` 或技术失败声明执行。最多 2 次；超过限制返回 `409`。返回 `202` 和声明当前状态。重试必须计入任务/provider 调用预算。
+`POST /api/claims/{claim_id}/retry` 允许证据不足、技术失败、有 `retrieval_warnings` 的检索未完成声明，以及人工调整或预算耗尽的 `unchecked` 声明。指代不明确的声明需先人工澄清；处理中任务仍拒绝重复重试。默认最多 2 次，受后端重试配置约束；超过限制返回 `409`。返回 `202` 和声明当前状态，接受时即清除旧标签及指数。重试必须计入任务/provider 调用预算。
+
+声明新增 `unchecked_reason: task_budget | unresolved_reference | null`，用于区分可继续执行的预算耗尽与需澄清的指代；历史任务默认 `null`，原有预算耗尽说明仍可识别。列表、详情和导出的单条 `support_score` 采用同一计算规则，旧报告缺失的指数在读取时派生，无需重写数据库。
 
 ## 导出
 

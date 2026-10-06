@@ -51,6 +51,7 @@ export interface ClaimListItem {
   type: ClaimType
   normalized_claim: string
   manually_edited: boolean
+  unchecked_reason?: 'task_budget' | 'unresolved_reference' | null
   entities: string[]
   conditions: string[]
   queries: string[]
@@ -72,6 +73,7 @@ export interface EvidenceItem {
   retrieved_at: string | null
   excerpt: string | null
   relation: EvidenceRelation
+  checks?: { part_id: number; part_text: string; relation: EvidenceRelation; excerpt: string | null }[]
   quality_reason: string | null
   is_reprint: boolean
   source_type?: 'web' | 'knowledge'

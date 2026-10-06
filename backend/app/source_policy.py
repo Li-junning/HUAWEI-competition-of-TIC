@@ -26,9 +26,10 @@ def source_profile(url: str | None) -> SourceProfile:
         return SourceProfile("entertainment", .3, "音乐作品页面，仅适用于作品信息核对")
     if _matches(host, ("wiktionary.org",)):
         return SourceProfile("dictionary", .4, "词典页面，仅适用于词义或语言用法核对")
-    if _matches(host, ("gov.cn", "gov", "un.org", "who.int")):
+    if _matches(host, ("gov.cn", "gov", "un.org", "who.int", "wmo.int", "ipcc.ch",
+                       "imf.org", "worldbank.org", "oecd.org", "unesco.org")):
         return SourceProfile("official", .9, "政府或国际组织网站，仍需核对正文与适用条件")
-    if _matches(host, ("edu", "ac.cn", "edu.cn")):
+    if _matches(host, ("edu", "ac.cn", "cas.cn", "edu.cn")):
         return SourceProfile("academic", .8, "高校或科研机构网站，仍需核对正文与适用条件")
     if _matches(host, ("kepu.gmw.cn", "kepuchina.cn", "cast.org.cn", "sciencenet.cn")):
         return SourceProfile("science", .8, "科研或科普机构平台，仍需核对作者、出处与语境")

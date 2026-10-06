@@ -235,9 +235,9 @@ def test_condition_clause_does_not_lose_a_supported_negative_fact():
 def test_condition_clause_and_value_conflict_are_combined_in_their_joint_scope():
     statement = "在标准大气压下，水的沸点是90摄氏度。"
     body = "在标准大气压下，水的沸点是100摄氏度。"
+    assert _claim_parts(statement) == [statement]
     result, item = run_judge(statement, body, relation="refutes", checks=[
-        dict(part_id=1, relation="supports", excerpt=body, alignment=MATCH),
-        dict(part_id=2, relation="refutes", excerpt=body, alignment=CONFLICT),
+        dict(part_id=1, relation="refutes", excerpt=body, alignment=CONFLICT),
     ])
     assert item.relation == EvidenceRelation.REFUTES
     assert result.label == ClaimLabel.INCORRECT

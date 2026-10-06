@@ -28,8 +28,9 @@ describe('report download reliability', () => {
     fetchMock.mockResolvedValue(new Response(content))
     await downloadReport('t_test', format)
     expect(fetchMock).toHaveBeenCalledWith(`/api/tasks/t_test/export?format=${format}`, expect.objectContaining({
-      headers: { Accept: format === 'json' ? 'application/json' : 'text/markdown' }, signal: expect.any(AbortSignal),
+      credentials: 'same-origin', signal: expect.any(AbortSignal),
     }))
+    expect(new Headers(fetchMock.mock.calls[0]![1]?.headers).get('Accept')).toBe(format === 'json' ? 'application/json' : 'text/markdown')
     expect(anchor.href).toBe('blob:report')
     expect(anchor.download).toBe(`verification-t_test.${format}`)
     expect(anchor.click).toHaveBeenCalledTimes(1)

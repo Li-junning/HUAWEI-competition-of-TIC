@@ -146,6 +146,17 @@ def verification_parts(text: str) -> list[str]:
     return parts[:7] + ["".join(parts[7:])] if len(parts) > 8 else parts
 
 
+def judgment_parts(text: str) -> list[str]:
+    """Use the same coverage obligations for model validation and aggregation."""
+    atoms = atomic_spans(text)
+    parts = [part.normalized for part in atoms] if len(atoms) > 1 else verification_parts(text)
+    if len(parts) > 1 and re.fullmatch(r"在[^，,]{1,30}(?:条件下|情况下|大气压下|期间)[，,]", parts[0]):
+        # An applicability phrase is part of its fact, not an independently
+        # provable assertion. Keeping it attached also demands a full quote.
+        parts = [parts[0] + parts[1], *parts[2:]]
+    return parts[:7] + ["".join(parts[7:])] if len(parts) > 8 else parts
+
+
 def _independent_tail(span: TextSpan) -> list[TextSpan] | None:
     """Keep a completed causal fact intact while separating a fresh assertion.
 

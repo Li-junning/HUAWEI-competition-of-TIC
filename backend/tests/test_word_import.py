@@ -149,8 +149,10 @@ def test_missing_word_dependency_returns_actionable_error(tmp_path, monkeypatch)
     monkeypatch.setitem(sys.modules, "docx", None)
     storage = Storage(tmp_path / "missing-dependency.db")
     try:
+        # Dependency availability is checked in the isolated parser now.
+        from app.knowledge import _read_docx
         with pytest.raises(KnowledgeError) as caught:
-            KnowledgeBase(storage).import_document(KnowledgeImport(**word_body(data)))
+            _read_docx(data)
         assert caught.value.code == "KB_WORD_UNAVAILABLE"
         assert caught.value.status == 503
     finally:

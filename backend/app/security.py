@@ -248,3 +248,30 @@ def validate_evidence_reference(
     if not evidence_id or evidence_id not in candidates or not excerpt:
         return False
     return excerpt in candidates[evidence_id]
+
+
+def ground_evidence_quote(evidence_id: str, excerpt: str | None, candidates: Mapping[str, str]) -> str | None:
+    """Recover a formatting-only quote into an exact, unique original slice.
+
+    NFKC and whitespace can repair ℃/°C, full-width punctuation and omitted
+    spaces. Words, digits, negation and punctuation remain required. The
+    validator still consumes the original source slice, never rewritten text.
+    """
+    if not excerpt or evidence_id not in candidates:
+        return None
+    text = candidates[evidence_id]
+    if validate_evidence_reference(evidence_id, excerpt, candidates):
+        return excerpt
+    normalized, offsets = [], []
+    for position, char in enumerate(text):
+        for folded in unicodedata.normalize("NFKC", char):
+            if not folded.isspace():
+                normalized.append(folded)
+                offsets.append(position)
+    needle = "".join(char for char in unicodedata.normalize("NFKC", excerpt) if not char.isspace())
+    haystack = "".join(normalized)
+    start = haystack.find(needle) if needle else -1
+    if start < 0 or haystack.find(needle, start + 1) >= 0:
+        return None
+    source = text[offsets[start]:offsets[start + len(needle) - 1] + 1]
+    return source if len(source) <= 1000 else None

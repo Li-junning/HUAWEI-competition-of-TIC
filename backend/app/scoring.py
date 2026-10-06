@@ -6,6 +6,7 @@ from collections import Counter
 
 from .schemas import Claim, ClaimLabel, ClaimState, Coverage
 from .judge import evidence_strengths
+from .claim_segmentation import judgment_parts
 
 
 VERIFIABLE = {ClaimLabel.CREDIBLE, ClaimLabel.DISPUTED, ClaimLabel.INCORRECT, ClaimLabel.EVIDENCE_INSUFFICIENT}
@@ -15,7 +16,7 @@ ADJUDICATED = {ClaimLabel.CREDIBLE, ClaimLabel.DISPUTED, ClaimLabel.INCORRECT}
 def support_score(claim: Claim) -> int | None:
     if claim.label not in ADJUDICATED:
         return None
-    support, refute = evidence_strengths(claim.evidence_clusters)
+    support, refute = evidence_strengths(claim.evidence_clusters, parts=judgment_parts(claim.normalized_claim))
     return round(50 + 50 * (support - refute))
 
 

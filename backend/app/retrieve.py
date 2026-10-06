@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import inspect
 import re
+import time
 import unicodedata
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -163,6 +164,7 @@ def _neutral_action(action: str, anchors: Sequence[str], value: str = "") -> str
     """Remove answer-like values while preserving negation and scope wording."""
     slot = fact_slot(action)
     neutral = slot.query if slot else causal_query(action) or action
+    neutral = re.sub(r"^(?:研究显示|研究表明|资料显示|报告显示|数据显示)[，,:：\s]*", "", neutral)
     # Turn directional/comparative answers into properties to look up. Keep
     # subjects and conditions, and never insert a presumed correct answer.
     neutral = re.sub(r"(?:自|从|由)[东南西北](?:方)?(?:向|往|到|至)[东南西北](?:方)?", "方向", neutral)
@@ -181,6 +183,13 @@ def _neutral_action(action: str, anchors: Sequence[str], value: str = "") -> str
         if match:
             neutral = f"{match.group(2)} {match.group(3)}"
             changed = True
+        elif re.fullmatch(r"[^，,。；;]{2,40}是[^，,。；;]{2,40}[。.]?", neutral):
+            subject, answer = neutral.rstrip("。.").split("是", 1)
+            # Classification queries must not carry the proposed category.
+            # Numeric/dated assertions retain their metric and scope instead.
+            if not re.search(r"\d|最|比|超过|低于|高于|因为|如果", answer):
+                neutral = f"{subject} 分类 定义"
+                changed = True
     for anchor in anchors:
         if anchor:
             updated = re.sub(re.escape(anchor), " ", neutral, flags=re.I)
@@ -204,7 +213,8 @@ def _neutral_action(action: str, anchors: Sequence[str], value: str = "") -> str
     return neutral
 
 
-def _retrieval_queries(claim) -> list[RetrievalQuery]:
+def _retrieval_queries(claim, *, max_queries: int = 3) -> list[RetrievalQuery]:
+    max_queries = max(1, min(max_queries, 3))
     queries = build_queries(claim.claim_id, entities=claim.entities,
                             action=claim.normalized_claim, conditions=claim.conditions)
     if not queries:
@@ -216,16 +226,16 @@ def _retrieval_queries(claim) -> list[RetrievalQuery]:
             variants = build_queries(claim.claim_id, action=part.normalized)
             focused.append(variants[1] if len(variants) > 1 else variants[0])
         # Spend the same three-query budget on fact coverage before source discovery.
-        return ([queries[0], *focused] if len(focused) == 2 else focused)[:3]
+        return ([queries[0], *focused] if len(focused) == 2 else focused)[:max_queries]
     topic = queries[1].query if len(queries) > 1 else queries[0].query
     # Reserve one of the existing three calls for source discovery. Ordinary
     # searches remain available so an allowlist cannot decide the answer.
     if len(topic) >= 6 and len(query_terms(topic)) >= 3:
         science = re.search(r"声音|声速|真空|光速|太阳|地球|自转|公转|沸点|大气压|物理|化学|生物", topic)
-        suffix = " (site:ac.cn OR site:edu.cn OR site:kepu.gmw.cn)" if science else " 官方 原始资料"
+        suffix = " (site:ac.cn OR site:cas.cn OR site:edu.cn OR site:kepu.gmw.cn)" if science else " 官方 原始资料"
         focused = _bounded_query([topic], limit=160 - len(suffix)) + suffix
         queries = [*queries[:2], RetrievalQuery(claim.claim_id, focused)]
-    return queries
+    return queries[:max_queries]
 
 
 def _topic_coverage(text: str, topic: str) -> tuple[float, int]:
@@ -248,6 +258,7 @@ def _subject_matches(body: str, claim_text: str) -> bool:
     aliases = (("声音", "声波", "声速"), ("太阳", "日出", "日落"), ("地球",),
                ("狗", "犬"), ("猫",), ("水", "纯水", "蒸馏水"))
     text = re.sub(r"^(?:因为|由于)", "", claim_text.strip())
+    text = re.sub(r"^(?:在|截至)[^，,。；;]{1,40}[，,]\s*", "", text)
     for group in aliases:
         if any(re.match(re.escape(name) + r"(?:的|在|是|从|自|公|属|能|不|会|由)", text) for name in group):
             return any(name in body for name in group)
@@ -314,7 +325,7 @@ def search_candidates(provider: SearchProvider, queries: Sequence[RetrievalQuery
     return results
 
 
-def fetch_result(result: SearchResult, *, client: SafeHttpClient, evidence_id: str, retrieved_at: str | None = None, anchor: str = "") -> EvidenceItem:
+def fetch_result(result: SearchResult, *, client: SafeHttpClient, evidence_id: str, retrieved_at: str | None = None, anchor: str = "", anchors: Sequence[str] = ()) -> EvidenceItem:
     """Fetch a candidate with bounded, plain-text extraction.
 
     A provider-supplied ``content`` is accepted as controlled data (e.g. an API
@@ -336,7 +347,7 @@ def fetch_result(result: SearchResult, *, client: SafeHttpClient, evidence_id: s
         publisher=result.publisher,
         published_at=result.published_at,
         retrieved_at=timestamp,
-        excerpt=_relevant_excerpt(text, anchor or result.title, result.snippet),
+        excerpt=_multi_target_excerpt(text, anchors, result.snippet) if len(anchors) > 1 else _relevant_excerpt(text, anchor or result.title, result.snippet),
         content_hash=content_hash(text),
         quality_reason="provider result with bounded plain-text content",
     )
@@ -413,6 +424,22 @@ def _relevant_excerpt(text: str, title: str = "", snippet: str = "") -> str:
     return text[start:min(end, start + 1000)]
 
 
+def _multi_target_excerpt(text: str, anchors: Sequence[str], snippet: str = "") -> str:
+    """Retain separate original passages for distant facts in a compound claim.
+
+    Each passage stays a verbatim source slice. Explicit separators prevent
+    implying that the page placed distant statements next to one another.
+    """
+    passages: list[str] = []
+    for anchor in anchors[:3]:
+        passage = _relevant_excerpt(text, anchor, snippet)
+        if not passage or any(passage in saved for saved in passages):
+            continue
+        passages = [saved for saved in passages if saved not in passage]
+        passages.append(passage)
+    return "\n\n[另一处原文片段]\n\n".join(passages)
+
+
 def cluster_evidence(items: Iterable[EvidenceItem]) -> list[EvidenceCluster]:
     """Cluster exact-content reprints, with title fallback for sparse records."""
     groups: dict[str, EvidenceCluster] = {}
@@ -461,14 +488,16 @@ class SearchBackedRetriever:
     DNS-pinned page fetcher can be added independently later.
     """
 
-    def __init__(self, search_provider: SearchProvider, *, max_evidence: int = 5) -> None:
+    def __init__(self, search_provider: SearchProvider, *, max_evidence: int = 5, max_queries: int = 3) -> None:
         self.search_provider = search_provider
         self.provider = search_provider.name
         self.max_evidence = max(1, min(max_evidence, 5))
+        self.max_queries = max(1, min(max_queries, 3))
         self._safe_client = SafeHttpClient(allow_network=False)
 
     def retrieve(self, claim, *, deadline: float | None = None) -> list[ApiEvidenceCluster]:
-        queries = _retrieval_queries(claim)
+        queries = _retrieval_queries(claim, max_queries=self.max_queries)
+        claim.retrieval_warnings = []
         if not queries:
             return []
         claim.queries = []
@@ -478,9 +507,11 @@ class SearchBackedRetriever:
         candidates: list[SearchResult] = []
         provider_errors = 0
         last_error: ProviderError | None = None
-        for query in queries:
+        for query_index, query in enumerate(queries, 1):
             claim.queries.append(query.query)
             try:
+                if deadline is not None and time.monotonic() >= deadline:
+                    raise SearchProviderError("SEARCH_TIMEOUT")
                 search = self.search_provider.search
                 parameters = inspect.signature(search).parameters.values()
                 accepts_deadline = any(
@@ -495,6 +526,8 @@ class SearchBackedRetriever:
             except ProviderError as exc:
                 provider_errors += 1
                 last_error = exc
+                message = exc.public_message if isinstance(exc, SearchProviderError) else "搜索服务暂时不可用（SEARCH_UNAVAILABLE）。"
+                claim.retrieval_warnings.append(f"第 {query_index} 组网页检索未完成：{message} 已保留取得的证据，未将技术失败当作反证。")
                 if isinstance(exc, SearchProviderError) and exc.code in {
                     "SEARCH_AUTH", "SEARCH_FORBIDDEN", "SEARCH_QUOTA", "SEARCH_NETWORK_PERMISSION",
                 }:
@@ -521,7 +554,8 @@ class SearchBackedRetriever:
         for candidate in candidates:
             try:
                 anchor = max((t for _, t in targets), key=lambda t: _topic_coverage(candidate.content or candidate.snippet, t))
-                item = fetch_result(candidate, client=self._safe_client, evidence_id=f"e_{len(evidence)+1}", anchor=anchor)
+                item = fetch_result(candidate, client=self._safe_client, evidence_id=f"e_{len(evidence)+1}", anchor=anchor,
+                                    anchors=[target for _, target in targets])
             except SecurityError:
                 continue
             if not source_allowed(item.url, claim.normalized_claim, item.title):
@@ -532,7 +566,7 @@ class SearchBackedRetriever:
                 continue
             seen_urls.add(item.url)
             if candidate.metadata.get("content_kind") == "search_snippet":
-                item.quality_reason = "搜索结果摘要；未取得完整正文，不能单独满足充分证据门槛"
+                item.quality_reason = "搜索结果摘要；未取得完整正文，需逐项核对或独立来源印证"
             else:
                 item.quality_reason = "搜索服务返回的正文；仍需核对实体、时间与语境"
             item.quality_reason += "；" + source_profile(item.url).reason
@@ -550,7 +584,7 @@ class SearchBackedRetriever:
                                  for part, _ in targets)
             # Only relevant pages reach this stage. Full bodies first, then
             # balance coverage with source priors instead of keyword stuffing.
-            return (quality, property_match, .6 * relevance + .4 * _source_authority(item.url), relevance)
+            return (property_match, .5 * relevance + .35 * _source_authority(item.url) + .15 * quality, relevance)
         clusters = cluster_evidence(evidence)
         selected = [max(cluster.items, key=rank) for cluster in clusters]
         selected_ids = {id(item) for item in selected}
@@ -558,13 +592,14 @@ class SearchBackedRetriever:
         ranked = sorted(selected, key=rank, reverse=True)
         evidence = []
         if len(targets) > 1:
+            all_ranked = sorted([*ranked, *remainder], key=rank, reverse=True)
             for part, target in targets:
-                best = next((item for item in ranked if _usable_excerpt(item, target, part)), None)
+                best = next((item for item in all_ranked if _usable_excerpt(item, target, part)), None)
                 if best is not None and best not in evidence:
                     evidence.append(best)
         evidence = (evidence + [item for item in ranked if item not in evidence])[:self.max_evidence]
         if len(evidence) < self.max_evidence:
-            evidence.extend(sorted(remainder, key=rank, reverse=True)[:self.max_evidence-len(evidence)])
+            evidence.extend([item for item in sorted(remainder, key=rank, reverse=True) if item not in evidence][:self.max_evidence-len(evidence)])
 
         kept = {id(item) for item in evidence}
         clusters = [EvidenceCluster(c.cluster_id, sorted([i for i in c.items if id(i) in kept], key=rank, reverse=True), c.independence_reason)

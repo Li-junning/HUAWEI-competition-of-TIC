@@ -1,0 +1,815 @@
+{
+  "checked_at": "2026-10-05T12:18:46.226143+08:00",
+  "mode": "live_public_fact_smoke",
+  "scope": "4 curated public facts; not independently labeled AI answers; not production accuracy",
+  "search": "tavily",
+  "judge": "mimo",
+  "rows": [
+    {
+      "case_id": "pku_founding_true",
+      "statement": "北京大学创立于1898年。",
+      "expected": "credible",
+      "reference": "https://www.pku.edu.cn/about.html",
+      "predicted": "credible",
+      "reason": "当前保存的证据在实体、语境和条件上提供了充分支持。",
+      "score": 97,
+      "queries": [
+        "北京大学创立于1898年。",
+        "北京大学 成立时间",
+        "北京大学 成立时间 官方 原始资料"
+      ],
+      "evidence": [
+        {
+          "cluster_id": "ec_0003",
+          "items": [
+            {
+              "evidence_id": "e_4",
+              "url": "https://www.pku.edu.cn/about.html",
+              "title": "北京大学",
+              "publisher": "www.pku.edu.cn",
+              "published_at": null,
+              "retrieved_at": "2026-10-05T04:19:03.880502Z",
+              "excerpt": "北京大学简介\n\n北京大学创办于1898年,是戊戌变法的产物,也是中华民族救亡图存、兴学图强的结果,初名京师大学堂,是中国近现代第一所国立综合性大学,辛亥革命后,于1912年改为现名。\n在悠久的文明历程中,古代中国曾创立太学、国子学、国子监等国家最高学府,在中国和世界教育史上具有重要影响。",
+              "relation": "supports",
+              "checks": [
+                {
+                  "part_id": 1,
+                  "part_text": "北京大学创立于1898年。",
+                  "relation": "supports",
+                  "excerpt": "北京大学创办于1898年"
+                }
+              ],
+              "quality_reason": "搜索服务返回的正文；仍需核对实体、时间与语境；高校或科研机构网站，仍需核对正文与适用条件；逐项核对已完成",
+              "is_reprint": false,
+              "content_hash": "3fdc6b5f8426866df68d595308563673bc0fa3320919815a4f1028a5ddede088",
+              "source_type": "web",
+              "knowledge_document_id": null,
+              "knowledge_chunk_id": null,
+              "source_page": null,
+              "source_char_start": null,
+              "source_char_end": null,
+              "authority": 0.8,
+              "relevance": 0.9,
+              "time_fit": 0.5
+            }
+          ],
+          "independence_reason": "same site or identical content hash"
+        },
+        {
+          "cluster_id": "ec_0002",
+          "items": [
+            {
+              "evidence_id": "e_2",
+              "url": "https://zh.wikipedia.org/zh-hans/%E5%8C%97%E4%BA%AC%E5%A4%A7%E5%AD%A6",
+              "title": "北京大学 - 维基百科，自由的百科全书",
+              "publisher": "zh.wikipedia.org",
+              "published_at": null,
+              "retrieved_at": "2026-10-05T04:19:00.797441Z",
+              "excerpt": "北京大学(英语:Peking University,缩写:PKU),简称北大,是一所位于中华人民共和国北京市海淀区燕园街道的公立大学。北京大学创立于1898年,初名京师大学堂,成立之初为中国最高学府,同时也是国家最高教育行政机关,行使教育部职能,统管全国教育。中华民国建立后,校名改为北京大学校,后又改名为国立北京大学。",
+              "relation": "supports",
+              "checks": [
+                {
+                  "part_id": 1,
+                  "part_text": "北京大学创立于1898年。",
+                  "relation": "supports",
+                  "excerpt": "北京大学创立于1898年"
+                }
+              ],
+              "quality_reason": "搜索服务返回的正文；仍需核对实体、时间与语境；百科资料，优先追溯其引用的原始来源；逐项核对已完成",
+              "is_reprint": false,
+              "content_hash": "6645ece68275611be42077272556f4f56c9c352ffe11af7b1e037a29753af8b9",
+              "source_type": "web",
+              "knowledge_document_id": null,
+              "knowledge_chunk_id": null,
+              "source_page": null,
+              "source_char_start": null,
+              "source_char_end": null,
+              "authority": 0.45,
+              "relevance": 0.9,
+              "time_fit": 0.5
+            },
+            {
+              "evidence_id": "e_3",
+              "url": "https://zh.wikipedia.org/wiki/%E5%8C%97%E4%BA%AC%E5%A4%A7%E5%AD%A6",
+              "title": "北京大学 - 维基百科，自由的百科全书",
+              "publisher": "zh.wikipedia.org",
+              "published_at": null,
+              "retrieved_at": "2026-10-05T04:19:02.043759Z",
+              "excerpt": "北京大学,简称北大,是位于中华人民共和国北京市海淀区燕园街道的公立大学。北京大学创立于1898年,初名京师大学堂,成立之初为中国最高学府,同时也是国家最高教育行政机关,行使教育部职能,统管全国教育。中华民国建立后,校名改为北京大学校,后又改名为国立北京大学。",
+              "relation": "supports",
+              "checks": [
+                {
+                  "part_id": 1,
+                  "part_text": "北京大学创立于1898年。",
+                  "relation": "supports",
+                  "excerpt": "北京大学创立于1898年"
+                }
+              ],
+              "quality_reason": "搜索服务返回的正文；仍需核对实体、时间与语境；百科资料，优先追溯其引用的原始来源；逐项核对已完成",
+              "is_reprint": false,
+              "content_hash": "038b9ce9d226fc7d65fb6c109f32a24f926ddbd3d61bc6da69d81bbe3fe9c324",
+              "source_type": "web",
+              "knowledge_document_id": null,
+              "knowledge_chunk_id": null,
+              "source_page": null,
+              "source_char_start": null,
+              "source_char_end": null,
+              "authority": 0.45,
+              "relevance": 0.9,
+              "time_fit": 0.5
+            }
+          ],
+          "independence_reason": "same site or identical content hash"
+        },
+        {
+          "cluster_id": "ec_0004",
+          "items": [
+            {
+              "evidence_id": "e_5",
+              "url": "https://news.sina.com.cn/c/2008-04-07/143115305511.shtml",
+              "title": "北京大学概况",
+              "publisher": "news.sina.com.cn",
+              "published_at": null,
+              "retrieved_at": "2026-10-05T04:19:03.894501Z",
+              "excerpt": "北京大学创立于1898年,初名京师大学堂,是中国第一所国立大学,也是中国在近代史上正式设立的第一所大学,其成立标志着中国近代高等教育的开端。",
+              "relation": "supports",
+              "checks": [
+                {
+                  "part_id": 1,
+                  "part_text": "北京大学创立于1898年。",
+                  "relation": "supports",
+                  "excerpt": "北京大学创立于1898年"
+                }
+              ],
+              "quality_reason": "搜索结果摘要；未取得完整正文，需逐项核对或独立来源印证；来源资质未确认，需结合独立来源交叉核验；逐项核对已完成",
+              "is_reprint": false,
+              "content_hash": "7830ab142f50a432417cda92e197657d68d5044400d56f2343415a922d4a0481",
+              "source_type": "web",
+              "knowledge_document_id": null,
+              "knowledge_chunk_id": null,
+              "source_page": null,
+              "source_char_start": null,
+              "source_char_end": null,
+              "authority": 0.55,
+              "relevance": 0.9,
+              "time_fit": 0.5
+            }
+          ],
+          "independence_reason": "same site or identical content hash"
+        },
+        {
+          "cluster_id": "ec_0001",
+          "items": [
+            {
+              "evidence_id": "e_1",
+              "url": "https://baike.baidu.com/item/%E5%8C%97%E4%BA%AC%E5%A4%A7%E5%AD%A6/110221",
+              "title": "北京大学",
+              "publisher": "baike.baidu.com",
+              "published_at": null,
+              "retrieved_at": "2026-10-05T04:19:00.069197Z",
+              "excerpt": "5 北京大学地质博物馆场馆介绍.北京大学地质博物馆 [引用日期2026-05-29]\n426 标本馆简介.北京大学生物标本馆 [引用日期2026-05-29]\n427 发展历程.北京大学深圳研究生院 [引用日期2026-05-29]\n428 国家级教学名师.北京大学 [引用日期2026-05-30]\n429 2026年北京大学外国留学生本科生博雅海外人才培养计划招生简章.北京大学国际合作部留学生办公室 [引用日期2026-05-30]\n430 《主角》主创进北大:一场关于“主角精神”的深度对谈.百家号.2026-06-02\n431 北京大学12项成果荣获2025年度国家科学技术奖.北京大学新闻网 [引用日期2026-07-08]\n432 学者之声 | 金安平:《觉醒年代》与觉醒年代中的北京大学.北京大学 [引用日期2026-07-09]\n433 北大123年“没有校歌”的历史.北京大学 [引用日期2026-07-09]\n434 北大校友王虹、邓煜荣获菲尔兹奖.北京大学 [引用日期2026-07-24]\n435 中国人民政治协商会议第十四届全国委员会.中国政府网 [引用日期2026-07-25]\n436 北京大学发文祝贺校友王虹、邓煜荣获菲尔兹奖.百度 [引用日期2026-07-25]\n437 我校与北京大学签订《北京大学支持山西大学建设与发展协议》.山大新闻网 [引用日期2026-08-26]\n438 校址分布.北京大学校史馆 [引用日期2026-09-01]\n展开全部\nImage 101\n暂无数据\nImage 102\n暂无数据\n全景图去百度地图查看全景>>\n词条统计\n浏览次数:\n编辑次数:1917次历史版本\n最近更新:\n天够真无鞋\nImage 103\n(2026-09-01)\n1 历史沿革京师大学堂时期民国初年五四运动前后三十年代西南联合大学时期国立北京大学新中国成立后十七年“文化大革命”期间改革开放新时期2 办学条件院系设置学科建设师资力量教学建设合作交流3 学术研究科研平台研究成果学术资源4 校园文化学校标志精神文化5 校区情况燕园校区学院路校区新燕园校区昌平校区怀柔科学城校区深圳校区大兴校区英国校区6 行政管理现任领导历任领导7 校园环境未名湖博雅塔办公楼图书馆考古与艺术博物馆校史馆档案馆蔡元培铜像守仁国际中心建筑群8 校友情况历史名人知名校友9 所获荣誉学",
+              "relation": "unknown",
+              "checks": [
+                {
+                  "part_id": 1,
+                  "part_text": "北京大学创立于1898年。",
+                  "relation": "irrelevant",
+                  "excerpt": null
+                }
+              ],
+              "quality_reason": "搜索服务返回的正文；仍需核对实体、时间与语境；百科资料，优先追溯其引用的原始来源；逐项核对已完成",
+              "is_reprint": false,
+              "content_hash": "051dadbab740830e637b27ae79767c525ea93de9050d78b6245cdcfac2373ba5",
+              "source_type": "web",
+              "knowledge_document_id": null,
+              "knowledge_chunk_id": null,
+              "source_page": null,
+              "source_char_start": null,
+              "source_char_end": null,
+              "authority": 0.45,
+              "relevance": 0.0,
+              "time_fit": 0.0
+            }
+          ],
+          "independence_reason": "same site or identical content hash"
+        }
+      ],
+      "matched": true,
+      "elapsed_seconds": 30.396
+    },
+    {
+      "case_id": "pku_founding_false",
+      "statement": "北京大学创立于2010年。",
+      "expected": "incorrect",
+      "reference": "https://www.pku.edu.cn/about.html",
+      "predicted": "incorrect",
+      "reason": "当前保存的证据对该声明提供了充分反驳。",
+      "score": 6,
+      "queries": [
+        "北京大学创立于2010年。",
+        "北京大学 成立时间",
+        "北京大学 成立时间 官方 原始资料"
+      ],
+      "evidence": [
+        {
+          "cluster_id": "ec_0003",
+          "items": [
+            {
+              "evidence_id": "e_4",
+              "url": "https://www.pku.edu.cn/about.html",
+              "title": "北京大学",
+              "publisher": "www.pku.edu.cn",
+              "published_at": null,
+              "retrieved_at": "2026-10-05T04:19:29.161774Z",
+              "excerpt": "北京大学简介\n\n北京大学创办于1898年,是戊戌变法的产物,也是中华民族救亡图存、兴学图强的结果,初名京师大学堂,是中国近现代第一所国立综合性大学,辛亥革命后,于1912年改为现名。\n在悠久的文明历程中,古代中国曾创立太学、国子学、国子监等国家最高学府,在中国和世界教育史上具有重要影响。",
+              "relation": "refutes",
+              "checks": [
+                {
+                  "part_id": 1,
+                  "part_text": "北京大学创立于2010年。",
+                  "relation": "refutes",
+                  "excerpt": "北京大学创办于1898年"
+                }
+              ],
+              "quality_reason": "搜索服务返回的正文；仍需核对实体、时间与语境；高校或科研机构网站，仍需核对正文与适用条件；逐项核对已完成",
+              "is_reprint": false,
+              "content_hash": "3fdc6b5f8426866df68d595308563673bc0fa3320919815a4f1028a5ddede088",
+              "source_type": "web",
+              "knowledge_document_id": null,
+              "knowledge_chunk_id": null,
+              "source_page": null,
+              "source_char_start": null,
+              "source_char_end": null,
+              "authority": 0.8,
+              "relevance": 0.9,
+              "time_fit": 0.5
+            }
+          ],
+          "independence_reason": "same site or identical content hash"
+        },
+        {
+          "cluster_id": "ec_0002",
+          "items": [
+            {
+              "evidence_id": "e_2",
+              "url": "https://zh.wikipedia.org/zh-hans/%E5%8C%97%E4%BA%AC%E5%A4%A7%E5%AD%A6",
+              "title": "北京大学 - 维基百科，自由的百科全书",
+              "publisher": "zh.wikipedia.org",
+              "published_at": null,
+              "retrieved_at": "2026-10-05T04:19:26.095030Z",
+              "excerpt": "北京大学(英语:Peking University,缩写:PKU),简称北大,是一所位于中华人民共和国北京市海淀区燕园街道的公立大学。北京大学创立于1898年,初名京师大学堂,成立之初为中国最高学府,同时也是国家最高教育行政机关,行使教育部职能,统管全国教育。中华民国建立后,校名改为北京大学校,后又改名为国立北京大学。",
+              "relation": "refutes",
+              "checks": [
+                {
+                  "part_id": 1,
+                  "part_text": "北京大学创立于2010年。",
+                  "relation": "refutes",
+                  "excerpt": "北京大学创立于1898年"
+                }
+              ],
+              "quality_reason": "搜索服务返回的正文；仍需核对实体、时间与语境；百科资料，优先追溯其引用的原始来源；逐项核对已完成",
+              "is_reprint": false,
+              "content_hash": "6645ece68275611be42077272556f4f56c9c352ffe11af7b1e037a29753af8b9",
+              "source_type": "web",
+              "knowledge_document_id": null,
+              "knowledge_chunk_id": null,
+              "source_page": null,
+              "source_char_start": null,
+              "source_char_end": null,
+              "authority": 0.45,
+              "relevance": 0.9,
+              "time_fit": 0.5
+            },
+            {
+              "evidence_id": "e_3",
+              "url": "https://zh.wikipedia.org/wiki/%E5%8C%97%E4%BA%AC%E5%A4%A7%E5%AD%A6",
+              "title": "北京大学 - 维基百科，自由的百科全书",
+              "publisher": "zh.wikipedia.org",
+              "published_at": null,
+              "retrieved_at": "2026-10-05T04:19:27.348431Z",
+              "excerpt": "北京大学,简称北大,是位于中华人民共和国北京市海淀区燕园街道的公立大学。北京大学创立于1898年,初名京师大学堂,成立之初为中国最高学府,同时也是国家最高教育行政机关,行使教育部职能,统管全国教育。中华民国建立后,校名改为北京大学校,后又改名为国立北京大学。",
+              "relation": "refutes",
+              "checks": [
+                {
+                  "part_id": 1,
+                  "part_text": "北京大学创立于2010年。",
+                  "relation": "refutes",
+                  "excerpt": "北京大学创立于1898年"
+                }
+              ],
+              "quality_reason": "搜索服务返回的正文；仍需核对实体、时间与语境；百科资料，优先追溯其引用的原始来源；逐项核对已完成",
+              "is_reprint": false,
+              "content_hash": "038b9ce9d226fc7d65fb6c109f32a24f926ddbd3d61bc6da69d81bbe3fe9c324",
+              "source_type": "web",
+              "knowledge_document_id": null,
+              "knowledge_chunk_id": null,
+              "source_page": null,
+              "source_char_start": null,
+              "source_char_end": null,
+              "authority": 0.45,
+              "relevance": 0.9,
+              "time_fit": 0.5
+            }
+          ],
+          "independence_reason": "same site or identical content hash"
+        },
+        {
+          "cluster_id": "ec_0001",
+          "items": [
+            {
+              "evidence_id": "e_1",
+              "url": "https://baike.baidu.com/item/%E5%8C%97%E4%BA%AC%E5%A4%A7%E5%AD%A6/110221",
+              "title": "北京大学",
+              "publisher": "baike.baidu.com",
+              "published_at": null,
+              "retrieved_at": "2026-10-05T04:19:24.968435Z",
+              "excerpt": "、985、小985、双一流都是哪些高校?.成都学大教育 [引用日期2024-08-07]\n258 “双一流”建设高校名单.中华人民共和国教育部政府门户网站 [引用日期2024-08-07]\n259 北京大学章程 (2017 年修订稿).北京大学 [引用日期2024-08-07]\n260 提升教育质量的执着追求.中华人民共和国教育部政府门户网站 [引用日期2024-08-07]\n261 中俄综合性大学联盟成立.中华人民共和国教育部政府门户网站 [引用日期2024-08-07]\n262 中俄成立大学联盟 深化高校间实质性交流.中国一带一路网 [引用日期2024-08-07]\n263 医学“双一流”建设联盟在京成立.中华人民共和国教育部政府门户网站 [引用日期2024-08-07]\n264 北京大学获得FISU“健康校园”铂金认证.北京大学 [引用日期2024-08-07]\n265 首批全国健康学校建设单位名单公布.央广网 [引用日期2024-08-07]\n266 亚洲大学联盟成立大会暨首届峰会在清华大学举行.清华大学 [引用日期2024-08-07]\n267 周其凤校长率团出席东亚四国大学校长论坛及第七届中日大学校长论坛.北京大学 [引用日期2024-08-07]\n268 胡适与北大.北京大学中国古代史研究中心 [引用日期2024-08-07]\n269 马寅初.北京大学社会学系wap [引用日期2024-08-07]\n270 北京大学招生简章报考指南2023.北京大学 [引用日期2024-08-10]\n271 QS World University Rankings 2025: Top Global Universities | Top Universities.QS世界大学排名 [引用日期2024-08-10]\n272 【软科排名】北京大学|2024中国大学专业排名|北京大学优势专业.软科 [引用日期2024-08-10]\n273 本科生培养计划简介.北京大学生命科学学院 [引用日期2024-08-14]\n274 北京大学本科教学质量报告 (2022-2023 学年).北京大学 [引用日期2024-08-14]\n275 学科专业.北京大学招生网 [引用日期2024-08-16]\n276 教育部公布首批基础学科拔尖学生培养计划2.0基地名单.中华人民共和国教育部政府门户",
+              "relation": "unknown",
+              "checks": [
+                {
+                  "part_id": 1,
+                  "part_text": "北京大学创立于2010年。",
+                  "relation": "irrelevant",
+                  "excerpt": null
+                }
+              ],
+              "quality_reason": "搜索服务返回的正文；仍需核对实体、时间与语境；百科资料，优先追溯其引用的原始来源；逐项核对已完成",
+              "is_reprint": false,
+              "content_hash": "051dadbab740830e637b27ae79767c525ea93de9050d78b6245cdcfac2373ba5",
+              "source_type": "web",
+              "knowledge_document_id": null,
+              "knowledge_chunk_id": null,
+              "source_page": null,
+              "source_char_start": null,
+              "source_char_end": null,
+              "authority": 0.45,
+              "relevance": 0.0,
+              "time_fit": 0.0
+            }
+          ],
+          "independence_reason": "same site or identical content hash"
+        }
+      ],
+      "matched": true,
+      "elapsed_seconds": 24.606
+    },
+    {
+      "case_id": "water_boiling_true",
+      "statement": "在标准大气压下，水的沸点是100摄氏度。",
+      "expected": "credible",
+      "reference": "https://www.iop.cas.cn/kxcb/kpwz/shzwlzl/201009/t20100919_2965944.html",
+      "predicted": "evidence_insufficient",
+      "reason": "当前证据只支持部分事实，尚未覆盖整条声明；未核验的部分不能视为正确。",
+      "score": null,
+      "queries": [
+        "在标准大气压下，水的沸点是100摄氏度。",
+        "标准大气压下，水 沸点",
+        "标准大气压下，水 沸点 (site:ac.cn OR site:edu.cn OR site:kepu.gmw.cn)"
+      ],
+      "evidence": [
+        {
+          "cluster_id": "ec_0001",
+          "items": [
+            {
+              "evidence_id": "e_1",
+              "url": "https://www.163.com/dy/article/HMNGHR1U0553BF5P.html",
+              "title": "水的沸点是由什么决定的，可以把水加热到100度以上吗？|海底|大气压|气泡|超临界_网易订阅",
+              "publisher": "www.163.com",
+              "published_at": null,
+              "retrieved_at": "2026-10-05T04:19:57.554285Z",
+              "excerpt": "所以我们看到的效果就是:内部液体由于也会蒸发,所以水沸腾的时候才会不断的产生气泡。\n\n水的沸点是100度,这是大家最熟悉的基本常识了,但其实,这句话是有一个隐含的前提条件的,那就是:在一个标准大气压下(约为101.325千帕斯卡),纯净水的沸点为100摄氏度(后来国际上的温度计量标准变更之后,水的沸点变成了99.974摄氏度)。\n但在生活中,由于水的纯净程度不同再加上所处海拔的不同,就会导致水的沸点并不是精确的100摄氏度,当然,我们日常也不需要纠结它的精确值,知道沸水大致是100度就可以了。",
+              "relation": "partially_supports",
+              "checks": [
+                {
+                  "part_id": 1,
+                  "part_text": "在标准大气压下，",
+                  "relation": "supports",
+                  "excerpt": "在一个标准大气压下(约为101.325千帕斯卡)"
+                },
+                {
+                  "part_id": 2,
+                  "part_text": "水的沸点是100摄氏度。",
+                  "relation": "partially_supports",
+                  "excerpt": "纯净水的沸点为100摄氏度(后来国际上的温度计量标准变更之后,水的沸点变成了99.974摄氏度)。"
+                }
+              ],
+              "quality_reason": "搜索服务返回的正文；仍需核对实体、时间与语境；来源资质未确认，需结合独立来源交叉核验；证据未逐项覆盖整条声明",
+              "is_reprint": false,
+              "content_hash": "d770dd17f924241c1edb99f0374b0f2a6f21f93875e9c79aba085d8e2da1123d",
+              "source_type": "web",
+              "knowledge_document_id": null,
+              "knowledge_chunk_id": null,
+              "source_page": null,
+              "source_char_start": null,
+              "source_char_end": null,
+              "authority": 0.55,
+              "relevance": 0.9,
+              "time_fit": 0.5
+            }
+          ],
+          "independence_reason": "same site or identical content hash"
+        },
+        {
+          "cluster_id": "ec_0004",
+          "items": [
+            {
+              "evidence_id": "e_5",
+              "url": "https://www.soocp.com/show-731.html",
+              "title": "水在不同气压环境下的沸点表_技术支持_郑州速普仪器官网",
+              "publisher": "www.soocp.com",
+              "published_at": null,
+              "retrieved_at": "2026-10-05T04:19:57.677686Z",
+              "excerpt": "结论\n水的沸点在标准大气压下是100°C,但随着外部压力的改变,它可以高于或低于这个温度。了解和控制这一点在科学实验、工业生产和日常生活中都具有重要意义。",
+              "relation": "partially_supports",
+              "checks": [
+                {
+                  "part_id": 1,
+                  "part_text": "在标准大气压下，",
+                  "relation": "supports",
+                  "excerpt": "在标准大气压下"
+                },
+                {
+                  "part_id": 2,
+                  "part_text": "水的沸点是100摄氏度。",
+                  "relation": "unknown",
+                  "excerpt": null
+                }
+              ],
+              "quality_reason": "搜索服务返回的正文；仍需核对实体、时间与语境；来源资质未确认，需结合独立来源交叉核验；核对项2：引用未通过原文定位校验",
+              "is_reprint": false,
+              "content_hash": "f22a2fd61e5972ac8e35284a082e68deaf1d912caee65c29042378d78aa966be",
+              "source_type": "web",
+              "knowledge_document_id": null,
+              "knowledge_chunk_id": null,
+              "source_page": null,
+              "source_char_start": null,
+              "source_char_end": null,
+              "authority": 0.55,
+              "relevance": 0.9,
+              "time_fit": 0.5
+            }
+          ],
+          "independence_reason": "same site or identical content hash"
+        },
+        {
+          "cluster_id": "ec_0002",
+          "items": [
+            {
+              "evidence_id": "e_3",
+              "url": "https://baike.baidu.com/item/%E6%B2%B8%E7%82%B9/3784678",
+              "title": "沸点",
+              "publisher": "baike.baidu.com",
+              "published_at": null,
+              "retrieved_at": "2026-10-05T04:19:57.614008Z",
+              "excerpt": "水的沸点\n摄氏温标的定义“在标准大气压下,以水的凝固点为0度,水的沸点为100度,中间分为100等分的温标。”\n所以通常人们都认为水的沸点是1标准大气压下100°C,但是1990年后不再如此(2013年使用的水沸点是1标准大气压下99.974°C)。",
+              "relation": "partially_supports",
+              "checks": [
+                {
+                  "part_id": 1,
+                  "part_text": "在标准大气压下，",
+                  "relation": "unknown",
+                  "excerpt": null
+                },
+                {
+                  "part_id": 2,
+                  "part_text": "水的沸点是100摄氏度。",
+                  "relation": "partially_supports",
+                  "excerpt": "通常人们都认为水的沸点是1标准大气压下100°C,但是1990年后不再如此(2013年使用的水沸点是1标准大气压下99.974°C)。"
+                }
+              ],
+              "quality_reason": "搜索服务返回的正文；仍需核对实体、时间与语境；百科资料，优先追溯其引用的原始来源；核对项1：证据未覆盖声明的适用条件",
+              "is_reprint": false,
+              "content_hash": "087d5a816598d27595a3a6e08ffe3089d44fdba5d3e827f12d5dbea27ae48d8d",
+              "source_type": "web",
+              "knowledge_document_id": null,
+              "knowledge_chunk_id": null,
+              "source_page": null,
+              "source_char_start": null,
+              "source_char_end": null,
+              "authority": 0.45,
+              "relevance": 0.6,
+              "time_fit": 0.5
+            }
+          ],
+          "independence_reason": "same site or identical content hash"
+        },
+        {
+          "cluster_id": "ec_0003",
+          "items": [
+            {
+              "evidence_id": "e_4",
+              "url": "http://gd.sina.com.cn/news/zhanjiang/2018-11-09/detail-ihmutuea8480079.shtml",
+              "title": "普通水的沸点就是100℃吗 不同大气压下沸点也不相同_新浪广东_新浪网",
+              "publisher": "gd.sina.com.cn",
+              "published_at": null,
+              "retrieved_at": "2026-10-05T04:19:57.668452Z",
+              "excerpt": "很多人普遍认为水的沸点就是100°C,其实,水的沸点与大气压有关,在不同的大气压环境下,水的沸点也不尽相同。\n我们曾学习过,在标准大气压条件下水的沸点是100°C,大气压越低,沸点就越低,大气压越高,沸点则越高。水作为液体在挥发的时候,会产生蒸气,当蒸气的压强与外界的压强相等时,这个时候蒸气压强已经达到了一种饱和的状态,这个时候水就会沸腾了,而此时水沸腾时的温度就是水的沸点。",
+              "relation": "unknown",
+              "checks": [
+                {
+                  "part_id": 1,
+                  "part_text": "在标准大气压下，",
+                  "relation": "unknown",
+                  "excerpt": null
+                },
+                {
+                  "part_id": 2,
+                  "part_text": "水的沸点是100摄氏度。",
+                  "relation": "unknown",
+                  "excerpt": null
+                }
+              ],
+              "quality_reason": "搜索服务返回的正文；仍需核对实体、时间与语境；来源资质未确认，需结合独立来源交叉核验；核对项1：引用上下文含原声明未覆盖的条件、推测或转述；核对项2：引用上下文含原声明未覆盖的条件、推测或转述",
+              "is_reprint": false,
+              "content_hash": "742a2c278f3f90e5fb3b00dc67abebe8a3465c7454a2add463dbf3da8161077d",
+              "source_type": "web",
+              "knowledge_document_id": null,
+              "knowledge_chunk_id": null,
+              "source_page": null,
+              "source_char_start": null,
+              "source_char_end": null,
+              "authority": 0.55,
+              "relevance": 0.0,
+              "time_fit": 0.0
+            }
+          ],
+          "independence_reason": "same site or identical content hash"
+        },
+        {
+          "cluster_id": "ec_0005",
+          "items": [
+            {
+              "evidence_id": "e_6",
+              "url": "https://rc.szza.edu.cn/rc/res/show/id/1715",
+              "title": "大气压强第2课时.pptx",
+              "publisher": "rc.szza.edu.cn",
+              "published_at": null,
+              "retrieved_at": "2026-10-05T04:19:57.710737Z",
+              "excerpt": "通常说的沸点,都是指在1 标准大气压下。 水的沸点是100 摄氏度,必须强调是在1 标准大气压",
+              "relation": "partially_supports",
+              "checks": [
+                {
+                  "part_id": 1,
+                  "part_text": "在标准大气压下，",
+                  "relation": "supports",
+                  "excerpt": "在1 标准大气压下"
+                },
+                {
+                  "part_id": 2,
+                  "part_text": "水的沸点是100摄氏度。",
+                  "relation": "unknown",
+                  "excerpt": null
+                }
+              ],
+              "quality_reason": "搜索结果摘要；未取得完整正文，需逐项核对或独立来源印证；高校或科研机构网站，仍需核对正文与适用条件；核对项2：证据未覆盖声明的适用条件",
+              "is_reprint": false,
+              "content_hash": "d64a73d83073eebd2271a128ee561eab41a13cdd480de5e6f9c7fe85a6a965a9",
+              "source_type": "web",
+              "knowledge_document_id": null,
+              "knowledge_chunk_id": null,
+              "source_page": null,
+              "source_char_start": null,
+              "source_char_end": null,
+              "authority": 0.8,
+              "relevance": 0.9,
+              "time_fit": 0.5
+            }
+          ],
+          "independence_reason": "same site or identical content hash"
+        }
+      ],
+      "matched": false,
+      "elapsed_seconds": 36.149
+    },
+    {
+      "case_id": "water_boiling_false",
+      "statement": "在标准大气压下，水的沸点是90摄氏度。",
+      "expected": "incorrect",
+      "reference": "https://www.iop.cas.cn/kxcb/kpwz/shzwlzl/201009/t20100919_2965944.html",
+      "predicted": "evidence_insufficient",
+      "reason": "已有直接证据，但来源可靠性或独立交叉验证尚未达到裁决要求。",
+      "score": null,
+      "queries": [
+        "在标准大气压下，水的沸点是90摄氏度。",
+        "标准大气压下，水 沸点",
+        "标准大气压下，水 沸点 (site:ac.cn OR site:edu.cn OR site:kepu.gmw.cn)"
+      ],
+      "evidence": [
+        {
+          "cluster_id": "ec_0002",
+          "items": [
+            {
+              "evidence_id": "e_2",
+              "url": "https://www.163.com/dy/article/HMNGHR1U0553BF5P.html",
+              "title": "水的沸点是由什么决定的，可以把水加热到100度以上吗？|海底|大气压|气泡|超临界_网易订阅",
+              "publisher": "www.163.com",
+              "published_at": null,
+              "retrieved_at": "2026-10-05T04:20:22.965140Z",
+              "excerpt": "所以我们看到的效果就是:内部液体由于也会蒸发,所以水沸腾的时候才会不断的产生气泡。\n\n水的沸点是100度,这是大家最熟悉的基本常识了,但其实,这句话是有一个隐含的前提条件的,那就是:在一个标准大气压下(约为101.325千帕斯卡),纯净水的沸点为100摄氏度(后来国际上的温度计量标准变更之后,水的沸点变成了99.974摄氏度)。\n但在生活中,由于水的纯净程度不同再加上所处海拔的不同,就会导致水的沸点并不是精确的100摄氏度,当然,我们日常也不需要纠结它的精确值,知道沸水大致是100度就可以了。",
+              "relation": "partially_supports",
+              "checks": [
+                {
+                  "part_id": 1,
+                  "part_text": "在标准大气压下，",
+                  "relation": "supports",
+                  "excerpt": "在一个标准大气压下"
+                },
+                {
+                  "part_id": 2,
+                  "part_text": "水的沸点是90摄氏度。",
+                  "relation": "unknown",
+                  "excerpt": null
+                }
+              ],
+              "quality_reason": "搜索服务返回的正文；仍需核对实体、时间与语境；来源资质未确认，需结合独立来源交叉核验；核对项2：引用未定位到声明要求的指标，不能借用其他指标的数据",
+              "is_reprint": false,
+              "content_hash": "d770dd17f924241c1edb99f0374b0f2a6f21f93875e9c79aba085d8e2da1123d",
+              "source_type": "web",
+              "knowledge_document_id": null,
+              "knowledge_chunk_id": null,
+              "source_page": null,
+              "source_char_start": null,
+              "source_char_end": null,
+              "authority": 0.55,
+              "relevance": 0.9,
+              "time_fit": 0.5
+            }
+          ],
+          "independence_reason": "same site or identical content hash"
+        },
+        {
+          "cluster_id": "ec_0005",
+          "items": [
+            {
+              "evidence_id": "e_5",
+              "url": "https://www.soocp.com/show-731.html",
+              "title": "水在不同气压环境下的沸点表_技术支持_郑州速普仪器官网",
+              "publisher": "www.soocp.com",
+              "published_at": null,
+              "retrieved_at": "2026-10-05T04:20:23.049063Z",
+              "excerpt": "结论\n水的沸点在标准大气压下是100°C,但随着外部压力的改变,它可以高于或低于这个温度。了解和控制这一点在科学实验、工业生产和日常生活中都具有重要意义。",
+              "relation": "refutes",
+              "checks": [
+                {
+                  "part_id": 1,
+                  "part_text": "在标准大气压下，",
+                  "relation": "supports",
+                  "excerpt": "在标准大气压下"
+                },
+                {
+                  "part_id": 2,
+                  "part_text": "水的沸点是90摄氏度。",
+                  "relation": "refutes",
+                  "excerpt": "水的沸点在标准大气压下是100°C"
+                }
+              ],
+              "quality_reason": "搜索服务返回的正文；仍需核对实体、时间与语境；来源资质未确认，需结合独立来源交叉核验；逐项核对已完成",
+              "is_reprint": false,
+              "content_hash": "f22a2fd61e5972ac8e35284a082e68deaf1d912caee65c29042378d78aa966be",
+              "source_type": "web",
+              "knowledge_document_id": null,
+              "knowledge_chunk_id": null,
+              "source_page": null,
+              "source_char_start": null,
+              "source_char_end": null,
+              "authority": 0.55,
+              "relevance": 0.9,
+              "time_fit": 0.5
+            }
+          ],
+          "independence_reason": "same site or identical content hash"
+        },
+        {
+          "cluster_id": "ec_0001",
+          "items": [
+            {
+              "evidence_id": "e_1",
+              "url": "https://zh.wikipedia.org/zh-hans/%E6%B2%B8%E7%82%B9",
+              "title": "沸点 - 维基百科，自由的百科全书",
+              "publisher": "zh.wikipedia.org",
+              "published_at": null,
+              "retrieved_at": "2026-10-05T04:20:22.937633Z",
+              "excerpt": "位于珠穆朗玛峰上的 8,848米(29,029英尺)处,气压约为 34 kPa(255 Torr),而水的沸点为71 °C(160 °F)。\n1954年之前,摄氏温标定义的两个参考点为标准大气压下,以 0 °C 作为水的凝固点,100 °C 作为水的沸点。\n正常沸点与液体蒸气压之间的关系",
+              "relation": "unknown",
+              "checks": [
+                {
+                  "part_id": 1,
+                  "part_text": "在标准大气压下，",
+                  "relation": "unknown",
+                  "excerpt": null
+                },
+                {
+                  "part_id": 2,
+                  "part_text": "水的沸点是90摄氏度。",
+                  "relation": "unknown",
+                  "excerpt": null
+                }
+              ],
+              "quality_reason": "搜索服务返回的正文；仍需核对实体、时间与语境；百科资料，优先追溯其引用的原始来源；核对项1：证据未覆盖声明的适用条件；核对项2：证据未覆盖声明的适用条件",
+              "is_reprint": false,
+              "content_hash": "cf4f1be22d1528d592890e6723d9c46263c6bf15fd1b5ff143f62731fa0d9202",
+              "source_type": "web",
+              "knowledge_document_id": null,
+              "knowledge_chunk_id": null,
+              "source_page": null,
+              "source_char_start": null,
+              "source_char_end": null,
+              "authority": 0.45,
+              "relevance": 0.0,
+              "time_fit": 0.0
+            }
+          ],
+          "independence_reason": "same site or identical content hash"
+        },
+        {
+          "cluster_id": "ec_0003",
+          "items": [
+            {
+              "evidence_id": "e_3",
+              "url": "https://baike.baidu.com/item/%E6%B2%B8%E7%82%B9/3784678",
+              "title": "沸点",
+              "publisher": "baike.baidu.com",
+              "published_at": null,
+              "retrieved_at": "2026-10-05T04:20:22.984610Z",
+              "excerpt": "水的沸点\n摄氏温标的定义“在标准大气压下,以水的凝固点为0度,水的沸点为100度,中间分为100等分的温标。”\n所以通常人们都认为水的沸点是1标准大气压下100°C,但是1990年后不再如此(2013年使用的水沸点是1标准大气压下99.974°C)。",
+              "relation": "partially_supports",
+              "checks": [
+                {
+                  "part_id": 1,
+                  "part_text": "在标准大气压下，",
+                  "relation": "supports",
+                  "excerpt": "在标准大气压下"
+                },
+                {
+                  "part_id": 2,
+                  "part_text": "水的沸点是90摄氏度。",
+                  "relation": "unknown",
+                  "excerpt": null
+                }
+              ],
+              "quality_reason": "搜索服务返回的正文；仍需核对实体、时间与语境；百科资料，优先追溯其引用的原始来源；核对项2：目标指标缺少可比较的数值，不能构成反证",
+              "is_reprint": false,
+              "content_hash": "087d5a816598d27595a3a6e08ffe3089d44fdba5d3e827f12d5dbea27ae48d8d",
+              "source_type": "web",
+              "knowledge_document_id": null,
+              "knowledge_chunk_id": null,
+              "source_page": null,
+              "source_char_start": null,
+              "source_char_end": null,
+              "authority": 0.45,
+              "relevance": 0.9,
+              "time_fit": 0.5
+            }
+          ],
+          "independence_reason": "same site or identical content hash"
+        },
+        {
+          "cluster_id": "ec_0004",
+          "items": [
+            {
+              "evidence_id": "e_4",
+              "url": "http://gd.sina.com.cn/news/zhanjiang/2018-11-09/detail-ihmutuea8480079.shtml",
+              "title": "普通水的沸点就是100℃吗 不同大气压下沸点也不相同_新浪广东_新浪网",
+              "publisher": "gd.sina.com.cn",
+              "published_at": null,
+              "retrieved_at": "2026-10-05T04:20:23.039671Z",
+              "excerpt": "很多人普遍认为水的沸点就是100°C,其实,水的沸点与大气压有关,在不同的大气压环境下,水的沸点也不尽相同。\n我们曾学习过,在标准大气压条件下水的沸点是100°C,大气压越低,沸点就越低,大气压越高,沸点则越高。水作为液体在挥发的时候,会产生蒸气,当蒸气的压强与外界的压强相等时,这个时候蒸气压强已经达到了一种饱和的状态,这个时候水就会沸腾了,而此时水沸腾时的温度就是水的沸点。",
+              "relation": "unknown",
+              "checks": [
+                {
+                  "part_id": 1,
+                  "part_text": "在标准大气压下，",
+                  "relation": "unknown",
+                  "excerpt": null
+                },
+                {
+                  "part_id": 2,
+                  "part_text": "水的沸点是90摄氏度。",
+                  "relation": "unknown",
+                  "excerpt": null
+                }
+              ],
+              "quality_reason": "搜索服务返回的正文；仍需核对实体、时间与语境；来源资质未确认，需结合独立来源交叉核验；核对项1：引用上下文含原声明未覆盖的条件、推测或转述；核对项2：引用上下文含原声明未覆盖的条件、推测或转述",
+              "is_reprint": false,
+              "content_hash": "742a2c278f3f90e5fb3b00dc67abebe8a3465c7454a2add463dbf3da8161077d",
+              "source_type": "web",
+              "knowledge_document_id": null,
+              "knowledge_chunk_id": null,
+              "source_page": null,
+              "source_char_start": null,
+              "source_char_end": null,
+              "authority": 0.55,
+              "relevance": 0.0,
+              "time_fit": 0.0
+            }
+          ],
+          "independence_reason": "same site or identical content hash"
+        }
+      ],
+      "matched": false,
+      "elapsed_seconds": 30.404
+    }
+  ],
+  "matched": 2,
+  "total": 4
+}

@@ -48,8 +48,15 @@ const resultsPanel = ref<HTMLElement | null>(null)
 const importErrorPanel = ref<HTMLElement | null>(null)
 const selected = ref<{ document: KnowledgeDocument; pages: string[] } | null>(null)
 const sourceLoading = ref(false)
+const sourceError = ref('')
 const sourcePanel = ref<HTMLElement | null>(null)
+const sourceContent = ref<HTMLElement | null>(null)
+const sourceHighlight = ref<HTMLElement | null>(null)
+const libraryPanel = ref<HTMLElement | null>(null)
 const activeDocumentId = ref<string | null>(null)
+const activeChunkId = ref<string | null>(null)
+const sourceHit = ref<KnowledgeHit | null>(null)
+let sourceTrigger: HTMLElement | null = null
 const page = ref(1)
 const selection = ref<{ start: number; end: number } | null>(null)
 const currentText = computed(() => selected.value?.pages[page.value - 1] ?? '')
@@ -191,15 +198,47 @@ async function search(): Promise<void> {
   } catch (reason) { if (!disposed) searchError.value = message(reason) }
   finally { if (!disposed) searching.value = false }
 }
-async function viewDocument(id: string, hit?: KnowledgeHit): Promise<void> {
+function resetSourceScroll(): void {
+  if (!sourceContent.value) return
+  sourceContent.value.scrollTop = 0
+  if (sourceHighlight.value) {
+    sourceContent.value.scrollTop = Math.max(0, sourceHighlight.value.getBoundingClientRect().top - sourceContent.value.getBoundingClientRect().top - 80)
+  }
+}
+async function changePage(nextPage: number): Promise<void> {
+  if (!selected.value || nextPage < 1 || nextPage > selected.value.pages.length) return
+  page.value = nextPage
+  selection.value = null
+  await nextTick()
+  resetSourceScroll()
+}
+async function closeSource(): Promise<void> {
+  documentRequest += 1
+  selected.value = null; sourceLoading.value = false; sourceError.value = ''
+  activeDocumentId.value = null; activeChunkId.value = null; selection.value = null
+  sourceHit.value = null
+  await nextTick()
+  const target = sourceTrigger?.isConnected ? sourceTrigger : libraryPanel.value
+  target?.focus({ preventScroll: true })
+  if (window.matchMedia('(max-width: 800px)').matches) {
+    target?.scrollIntoView({ block: 'nearest', behavior: 'auto' })
+  }
+  sourceTrigger = null
+}
+async function viewDocument(id: string, hit?: KnowledgeHit, event?: Event): Promise<void> {
   const request = ++documentRequest
+  if (event?.currentTarget instanceof HTMLElement) sourceTrigger = event.currentTarget
   activeDocumentId.value = id
-  sourceLoading.value = true; error.value = ''; selected.value = null
+  activeChunkId.value = hit?.chunk_id ?? null
+  sourceHit.value = hit ?? null
+  sourceLoading.value = true; sourceError.value = ''; selected.value = null
   selection.value = null
   try {
     const result = await getKnowledgeDocument(id)
     if (disposed || request !== documentRequest) return
-    selected.value = result; page.value = hit?.page ?? 1
+    selected.value = result
+    const hitPage = hit?.page ?? 1
+    page.value = Number.isInteger(hitPage) && hitPage >= 1 && hitPage <= result.pages.length ? hitPage : 1
     if (hit) selection.value = { start: hit.char_start, end: hit.char_end }
     else if (id === props.initialDocument) {
       const params = new URLSearchParams(window.location.search)
@@ -207,18 +246,23 @@ async function viewDocument(id: string, hit?: KnowledgeHit): Promise<void> {
       page.value = Number.isInteger(requestedPage) && requestedPage >= 1 && requestedPage <= result.pages.length ? requestedPage : 1
       if (params.has('kb_start') && params.has('kb_end')) selection.value = { start: Number(params.get('kb_start')), end: Number(params.get('kb_end')) }
     }
-    await nextTick()
-    sourcePanel.value?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' })
-  } catch (reason) { if (!disposed && request === documentRequest) error.value = message(reason) }
+  } catch (reason) { if (!disposed && request === documentRequest) sourceError.value = message(reason) }
   finally { if (!disposed && request === documentRequest) sourceLoading.value = false }
+  await nextTick()
+  if (disposed || request !== documentRequest) return
+  resetSourceScroll()
+  if (window.matchMedia('(max-width: 800px)').matches) {
+    sourcePanel.value?.focus({ preventScroll: true })
+    sourcePanel.value?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' })
+  }
 }
 async function remove(doc: KnowledgeDocument): Promise<void> {
-  if (busy.value || !window.confirm(`删除“${doc.title}”？后续核验将不再检索它；已有报告中的证据片段会保留。`)) return
+  if (busy.value || searching.value || !window.confirm(`删除“${doc.title}”？后续核验将不再检索它；已有报告中的证据片段会保留。`)) return
   busy.value = true; error.value = ''; notice.value = ''
   try {
     await deleteKnowledgeDocument(doc.document_id)
     if (disposed) return
-    if (activeDocumentId.value === doc.document_id) { documentRequest += 1; selected.value = null; sourceLoading.value = false }
+    if (activeDocumentId.value === doc.document_id) { sourceTrigger = null; await closeSource() }
     hits.value = []; searched.value = false
     notice.value = '资料已从知识库删除。'
     await refresh()
@@ -242,68 +286,125 @@ onMounted(async () => { await refresh(); if (!disposed && props.initialDocument)
 <template>
   <section class="knowledge-page" aria-labelledby="knowledge-title">
     <header class="kb-page-heading">
-      <div><p class="eyebrow">YOUR EVIDENCE LIBRARY</p><h1 id="knowledge-title">我的知识库<span class="kb-title-dot" aria-hidden="true"></span></h1><p class="kb-page-description">让你的参考资料，成为每次核验的证据。</p></div>
-      <div class="kb-heading-actions"><button type="button" class="secondary-button" @click="$emit('back')"><AppIcon name="arrow" class="kb-back-arrow" />返回核验</button><button ref="importTrigger" type="button" class="primary-button" :disabled="busy || searching" @click="openImport()"><AppIcon name="plus" />添加资料</button></div>
+      <div>
+        <p class="eyebrow">YOUR EVIDENCE LIBRARY</p>
+        <h1 id="knowledge-title">我的知识库</h1>
+        <p class="kb-page-description">保存参考资料，检索证据，随时对照原文。</p>
+      </div>
+      <div class="kb-heading-actions">
+        <button type="button" class="secondary-button" @click="$emit('back')"><AppIcon name="arrow" class="kb-back-arrow" />返回核验</button>
+        <button ref="importTrigger" type="button" class="primary-button" :disabled="busy || searching" @click="openImport()"><AppIcon name="plus" />添加资料</button>
+      </div>
     </header>
+
+    <div class="kb-overview" aria-label="知识库概况">
+      <div class="kb-metrics">
+        <span><AppIcon name="library" /><strong>{{ status ? status.document_count.toLocaleString() : '—' }}</strong>份资料</span>
+        <span><AppIcon name="layers" /><strong>{{ status ? status.chunk_count.toLocaleString() : '—' }}</strong>个证据片段</span>
+        <span class="kb-local-badge"><AppIcon name="shield" />本机保存</span>
+      </div>
+      <details v-if="status" class="kb-engine-details">
+        <summary><i :class="{ ready: status.semantic_ready }" aria-hidden="true"></i>{{ status.mode === 'hybrid' ? '混合检索' : '关键词检索' }}<AppIcon name="chevron" /></summary>
+        <div class="kb-engine-popover">
+          <strong>检索状态</strong><p>{{ status.message }}</p>
+          <p>已建立 {{ status.indexed_chunks.toLocaleString() }} / {{ status.chunk_count.toLocaleString() }} 个语义索引</p>
+          <button v-if="status.semantic_ready && status.indexed_chunks < status.chunk_count" class="text-button" type="button" :disabled="busy || searching" @click="reindex">{{ busy ? '正在处理…' : '补建语义索引' }}<AppIcon name="arrow" /></button>
+        </div>
+      </details>
+      <span v-else class="kb-status-loading">正在读取状态…</span>
+    </div>
+
     <p v-if="error" class="global-error" role="alert">{{ error }}</p>
     <p v-if="notice" class="kb-notice" role="status"><AppIcon name="check" />{{ notice }}</p>
 
-    <div class="kb-overview" aria-label="知识库概况">
-      <section class="kb-stat-card"><div class="kb-stat-top"><span>已保存资料</span><span class="kb-stat-icon"><AppIcon name="library" /></span></div><strong>{{ status ? status.document_count.toLocaleString() : '—' }}<small>份</small></strong><p>为核验积累可追溯的来源</p></section>
-      <section class="kb-stat-card"><div class="kb-stat-top"><span>可检索证据</span><span class="kb-stat-icon"><AppIcon name="layers" /></span></div><strong>{{ status ? status.chunk_count.toLocaleString() : '—' }}<small>个片段</small></strong><p>从资料正文中提取的检索片段</p></section>
-      <section class="kb-stat-card kb-engine-card"><div class="kb-stat-top"><span>检索方式</span><span class="kb-stat-icon"><AppIcon name="search" /></span></div><strong class="kb-mode">{{ status ? status.mode === 'hybrid' ? '混合检索' : '关键词检索' : '等待确认' }}<span v-if="status?.semantic_ready" class="kb-ready-badge"><i aria-hidden="true"></i>语义就绪</span></strong><p>{{ status ? '已建立 ' + status.indexed_chunks.toLocaleString() + ' 个向量' : '正在读取检索状态…' }}</p></section>
-    </div>
-    <p v-if="status" class="kb-engine-note"><AppIcon name="info" />{{ status.message }}<button v-if="status.semantic_ready && status.indexed_chunks < status.chunk_count" class="text-button" type="button" :disabled="busy || searching" @click="reindex">{{ busy ? '正在处理…' : '补建语义索引' }}<AppIcon name="arrow" /></button></p>
+    <section class="kb-card kb-search-card" aria-labelledby="kb-search-title">
+      <div class="kb-search-heading"><span class="kb-search-symbol"><AppIcon name="search" /></span><div><h2 id="kb-search-title">在资料中查找证据</h2><p>输入问题或待核验的说法，找到相关的原文片段。</p></div></div>
+      <form @submit.prevent="search">
+        <div class="kb-query-field"><label class="sr-only" for="kb-query">检索问题或待验证声明</label><textarea id="kb-query" v-model="query" rows="2" maxlength="2000" :disabled="searching || busy" :aria-describedby="searchError ? 'kb-search-note kb-search-error' : 'kb-search-note'" placeholder="例如：这项技术有哪些适用条件？" @keydown="handleSearchKeydown" /></div>
+        <div class="kb-search-actions">
+          <select v-model="tag" :disabled="searching || busy || !knownTags.length" aria-label="按分类标签检索"><option value="">全部标签</option><option v-for="item in knownTags" :key="item" :value="item">{{ item }}</option></select>
+          <button class="primary-button" type="submit" :disabled="searching || busy || !query.trim()"><AppIcon name="search" />{{ searching ? '检索中…' : '检索证据' }}</button>
+        </div>
+        <p v-if="searchError" id="kb-search-error" class="form-error kb-search-error" role="alert">{{ searchError }}</p>
+      </form>
+      <div class="kb-search-footer"><p id="kb-search-note"><AppIcon name="info" />匹配片段提供核验线索，命中与排序不代表说法正确。</p><span class="keyboard-shortcut">Ctrl / ⌘ + Enter</span></div>
+    </section>
 
     <div class="kb-workspace">
-      <section class="kb-card kb-library" aria-labelledby="kb-library-title">
-        <div class="kb-library-heading"><div><h2 id="kb-library-title">资料与证据</h2><p>管理参考资料，也可以直接追溯检索片段。</p></div><button type="button" class="kb-refresh-button" :disabled="loading || busy" @click="error = ''; refresh()"><AppIcon name="refresh" :class="{ 'kb-spinning': loading }" />刷新</button></div>
-        <div class="kb-view-tabs" role="group" aria-label="切换资料与检索结果"><button type="button" :class="{ active: activeView === 'documents' }" :aria-pressed="activeView === 'documents'" aria-controls="kb-documents-view" @click="activeView = 'documents'"><AppIcon name="library" />全部资料<span>{{ documents.length }}</span></button><button type="button" :class="{ active: activeView === 'results' }" :aria-pressed="activeView === 'results'" aria-controls="kb-results-view" @click="activeView = 'results'"><AppIcon name="search" />检索结果<span v-if="searched">{{ hits.length }}</span></button></div>
+      <section ref="libraryPanel" class="kb-card kb-library" tabindex="-1" aria-labelledby="kb-library-title">
+        <div class="kb-library-heading"><h2 id="kb-library-title">资料与证据</h2><button type="button" class="kb-refresh-button" :disabled="loading || busy || searching" @click="error = ''; refresh()"><AppIcon name="refresh" :class="{ 'kb-spinning': loading }" />刷新</button></div>
+        <div class="kb-view-tabs" role="group" aria-label="切换资料与检索结果">
+          <button type="button" :class="{ active: activeView === 'documents' }" :aria-pressed="activeView === 'documents'" aria-controls="kb-documents-view" @click="activeView = 'documents'">全部资料<span>{{ documents.length }}</span></button>
+          <button type="button" :class="{ active: activeView === 'results' }" :aria-pressed="activeView === 'results'" aria-controls="kb-results-view" @click="activeView = 'results'">检索结果<span v-if="searched">{{ hits.length }}</span></button>
+        </div>
 
-        <div v-if="activeView === 'documents'" id="kb-documents-view" :aria-busy="loading">
-          <div class="kb-list-filters"><div class="kb-filter-input"><AppIcon name="search" /><label class="sr-only" for="kb-document-query">查找已保存资料</label><input id="kb-document-query" v-model="documentQuery" :disabled="loading || !documents.length" placeholder="搜索标题、发布方或标签…" /><button v-if="documentQuery" type="button" aria-label="清空资料搜索" @click="documentQuery = ''"><AppIcon name="close" /></button></div><select v-model="documentTag" :disabled="loading || !knownTags.length" aria-label="筛选资料标签"><option value="">全部标签</option><option v-for="item in knownTags" :key="item" :value="item">{{ item }}</option></select></div>
-          <div v-if="loading" class="kb-list-loading" role="status"><span>正在读取资料…</span><div v-for="index in 3" :key="index" class="kb-skeleton-row" aria-hidden="true"><i></i><div><span></span><span></span></div></div></div>
-          <div v-else-if="!documents.length" class="kb-empty">
-            <div class="kb-empty-art" aria-hidden="true"><span class="kb-art-page kb-art-back"><AppIcon name="file" /></span><span class="kb-art-page"><AppIcon name="file" /></span><span class="kb-art-seal"><AppIcon name="plus" /></span></div>
-            <h3>从第一份可信资料开始</h3><p>技术白皮书、研究论文或政策文件，<br />都可以成为你下一次核验的参考依据。</p>
-            <div class="kb-empty-actions"><button type="button" class="primary-button" :disabled="busy || searching" @click="openImport('file')"><AppIcon name="upload" />上传资料</button><button type="button" class="secondary-button" :disabled="busy || searching" @click="openImport('text')"><AppIcon name="file" />粘贴正文</button></div>
-            <div class="kb-formats"><span>Word</span><span>PDF</span><span>TXT</span><span>Markdown</span><small>单文件最多 2 MiB</small></div>
+        <div v-if="activeView === 'documents'" id="kb-documents-view" class="kb-documents-view" :aria-busy="loading">
+          <div class="kb-list-filters">
+            <div class="kb-filter-input"><AppIcon name="search" /><label class="sr-only" for="kb-document-query">筛选资料标题、发布方或标签</label><input id="kb-document-query" v-model="documentQuery" :disabled="loading || !documents.length" placeholder="筛选标题、发布方或标签" /><button v-if="documentQuery" type="button" aria-label="清空资料筛选" @click="documentQuery = ''"><AppIcon name="close" /></button></div>
+            <select v-model="documentTag" :disabled="loading || !knownTags.length" aria-label="筛选资料标签"><option value="">全部标签</option><option v-for="item in knownTags" :key="item" :value="item">{{ item }}</option></select>
           </div>
-          <div v-else-if="!filteredDocuments.length" class="kb-filter-empty"><AppIcon name="search" /><h3>没有找到匹配的资料</h3><p>试试其他关键词，或调整分类标签。</p><button type="button" class="secondary-button" @click="documentQuery = ''; documentTag = ''">清除筛选</button></div>
-          <ul v-else class="kb-document-list" aria-label="已保存资料">
-            <li v-for="doc in filteredDocuments" :key="doc.document_id" class="kb-document">
-              <span class="kb-document-icon"><FileTypeIcon :filename="doc.filename" /><span class="sr-only">{{ documentFormat(doc) }} 资料</span></span>
-              <div class="kb-document-info"><h3 :title="doc.title">{{ doc.title }}</h3><p>{{ doc.publisher || '未填写发布方' }}<span>·</span>{{ doc.char_count.toLocaleString() }} 字符</p><div class="kb-tags"><span v-for="item in doc.tags" :key="item">{{ item }}</span><small>{{ formatDate(doc.created_at) }} 导入</small></div></div>
-              <div class="kb-document-count"><strong>{{ doc.chunk_count }}</strong><small>证据片段</small></div>
-              <div class="kb-document-actions"><button type="button" class="kb-view-document" @click="viewDocument(doc.document_id)">查看原文<AppIcon name="chevron" /></button><button type="button" class="kb-delete" :disabled="busy || searching" :aria-label="'删除资料：' + doc.title" title="删除资料" @click="remove(doc)"><AppIcon name="trash" /></button></div>
-            </li>
-          </ul>
-          <div class="kb-list-footer"><AppIcon name="shield" /><span>资料保存在本机，新建核验任务会自动检索你的知识库。</span><span v-if="documents.length" class="kb-visible-count">{{ filteredDocuments.length }} / {{ documents.length }} 份</span></div>
+          <div class="kb-list-scroll">
+            <div v-if="loading" class="kb-list-loading" role="status"><span>正在读取资料…</span><div v-for="index in 3" :key="index" class="kb-skeleton-row" aria-hidden="true"><i></i><div><span></span><span></span></div></div></div>
+            <div v-else-if="!documents.length" class="kb-empty">
+              <span class="kb-empty-icon"><AppIcon name="library" /></span><h3>添加第一份参考资料</h3><p>上传论文、白皮书或政策文件，<br />为下一次核验积累依据。</p>
+              <div class="kb-empty-actions"><button type="button" class="primary-button" :disabled="busy || searching" @click="openImport('file')"><AppIcon name="upload" />上传资料</button><button type="button" class="secondary-button" :disabled="busy || searching" @click="openImport('text')">粘贴正文</button></div>
+              <p class="kb-formats">Word · PDF · TXT · Markdown<br /><small>单文件最多 2 MiB</small></p>
+            </div>
+            <div v-else-if="!filteredDocuments.length" class="kb-filter-empty"><AppIcon name="search" /><h3>没有匹配的资料</h3><p>试试其他关键词或标签。</p><button type="button" class="secondary-button" @click="documentQuery = ''; documentTag = ''">清除筛选</button></div>
+            <ul v-else class="kb-document-list" aria-label="已保存资料">
+              <li v-for="doc in filteredDocuments" :key="doc.document_id" class="kb-document" :class="{ 'is-selected': activeDocumentId === doc.document_id }">
+                <button type="button" class="kb-document-open" :aria-pressed="activeDocumentId === doc.document_id" aria-controls="kb-source-view" @click="viewDocument(doc.document_id, undefined, $event)">
+                  <span class="kb-document-icon"><FileTypeIcon :filename="doc.filename" /><span class="sr-only">{{ documentFormat(doc) }} 资料</span></span>
+                  <span class="kb-document-info"><strong :title="doc.title">{{ doc.title }}</strong><span class="kb-document-meta">{{ doc.publisher || '发布方未填写' }} · {{ doc.char_count.toLocaleString() }} 字符</span><span class="kb-document-evidence">{{ doc.chunk_count }} 个证据片段<span class="kb-document-read">{{ activeDocumentId === doc.document_id ? '阅读中' : '查看原文' }}<AppIcon name="chevron" /></span></span><span v-if="doc.tags.length" class="kb-tags"><span v-for="item in doc.tags.slice(0, 2)" :key="item" :title="item">{{ item }}</span><span v-if="doc.tags.length > 2" :title="doc.tags.slice(2).join('、')">+{{ doc.tags.length - 2 }}</span></span><span class="kb-document-date">{{ formatDate(doc.created_at) }} 导入</span></span>
+                </button>
+                <button type="button" class="kb-delete" :disabled="busy || searching" :aria-label="'删除资料：' + doc.title" title="删除资料" @click="remove(doc)"><AppIcon name="trash" /></button>
+              </li>
+            </ul>
+          </div>
+          <div class="kb-list-footer"><AppIcon name="shield" /><span>新建核验任务时自动检索</span><span class="kb-visible-count">{{ filteredDocuments.length }} / {{ documents.length }} 份</span></div>
         </div>
 
         <div v-else id="kb-results-view" ref="resultsPanel" class="kb-results-view" tabindex="-1" role="region" aria-label="知识库检索结果" :aria-busy="searching">
-          <p v-if="searched" class="kb-query-summary">本次检索：<strong>{{ lastQuery }}</strong><span v-if="lastTag">标签 · {{ lastTag }}</span></p>
-          <div v-if="!searched" class="kb-filter-empty kb-search-empty"><span class="kb-empty-search-icon"><AppIcon name="search" /></span><h3>证据，从一个问题开始</h3><p>在检索框输入问题或待核验的说法，<br />查看匹配片段，并追溯到资料原文。</p></div>
-          <div v-else-if="!hits.length" class="kb-filter-empty"><AppIcon name="search" /><h3>未找到相关证据</h3><p>换个表达，或添加更多资料再试。<br />未命中不能作为判定说法为假的依据。</p></div>
-          <template v-else><p class="kb-results-caption">找到 {{ hits.length }} 个相关片段 · 匹配与排序不代表说法正确</p><article v-for="(hit, index) in hits" :key="hit.chunk_id" class="kb-hit"><div class="kb-hit-heading"><span class="kb-hit-number">{{ String(index + 1).padStart(2, '0') }}</span><h3>{{ hit.title }}</h3><span class="kb-match-badge">{{ hit.matched_by.includes('semantic') ? (hit.matched_by.includes('keyword') ? '关键词 + 语义' : '语义匹配') : '关键词匹配' }}</span></div><p class="kb-help">{{ hit.publisher || '发布方未填写' }} · {{ hit.page ? '第 ' + hit.page + ' 页 · ' : '' }}正文字符 {{ hit.char_start }}–{{ hit.char_end }}</p><blockquote>{{ hit.excerpt }}</blockquote><button class="kb-result-link" type="button" @click="viewDocument(hit.document_id, hit)">定位到原文<AppIcon name="arrow" /></button></article></template>
+          <p v-if="searching" class="kb-query-summary" role="status">正在检索相关证据…</p>
+          <p v-else-if="searched" class="kb-query-summary"><span :title="lastQuery">检索：<strong>{{ lastQuery }}</strong></span><span v-if="lastTag" class="kb-tag-label">{{ lastTag }}</span></p>
+          <div class="kb-list-scroll">
+            <div v-if="!searched" class="kb-filter-empty"><AppIcon name="search" /><h3>从一个问题开始</h3><p>在上方输入问题或说法，<br />查找证据并对照原文。</p></div>
+            <div v-else-if="!hits.length" class="kb-filter-empty"><AppIcon name="search" /><h3>未找到相关证据</h3><p>换个表达，或添加更多资料。<br />未命中不能作为判定说法为假的依据。</p></div>
+            <template v-else>
+              <p class="kb-results-caption">找到 {{ hits.length }} 个片段 · 点击片段定位原文</p>
+              <article v-for="(hit, index) in hits" :key="hit.chunk_id" class="kb-hit" :class="{ 'is-selected': activeChunkId === hit.chunk_id }">
+                <button type="button" class="kb-hit-open" :aria-pressed="activeChunkId === hit.chunk_id" aria-controls="kb-source-view" @click="viewDocument(hit.document_id, hit, $event)">
+                  <span class="kb-hit-heading"><span class="kb-hit-number">{{ String(index + 1).padStart(2, '0') }}</span><strong>{{ hit.title }}</strong></span>
+                  <span class="kb-hit-meta">{{ hit.publisher || '发布方未填写' }}<template v-if="hit.page"> · 第 {{ hit.page }} 页</template></span>
+                  <span class="kb-hit-excerpt">{{ hit.excerpt }}</span>
+                  <span class="kb-hit-footer"><span class="kb-match-badge">{{ hit.matched_by.includes('semantic') ? (hit.matched_by.includes('keyword') ? '关键词 + 语义' : '语义匹配') : '关键词匹配' }}</span><span class="kb-result-link">定位原文<AppIcon name="arrow" /></span></span>
+                </button>
+              </article>
+            </template>
+          </div>
         </div>
       </section>
 
-      <aside class="kb-search-sidebar" aria-labelledby="kb-search-title">
-        <section class="kb-card kb-search-card">
-          <span class="kb-search-symbol"><AppIcon name="search" /></span><p class="eyebrow">FIND YOUR EVIDENCE</p><h2 id="kb-search-title">检索你的证据</h2><p class="kb-search-description">从已保存的资料里，找到支持判断的线索。</p>
-          <form @submit.prevent="search"><label class="sr-only" for="kb-query">检索问题或待验证声明</label><textarea id="kb-query" v-model="query" rows="4" maxlength="2000" :disabled="searching || busy" :aria-describedby="searchError ? 'kb-search-note kb-search-error' : 'kb-search-note'" placeholder="输入问题或待核验的说法…&#10;&#10;例如：这项技术有哪些适用条件？" @keydown="handleSearchKeydown" /><p class="kb-search-shortcut keyboard-shortcut">Ctrl / ⌘ + Enter 检索</p><div class="kb-search-actions"><select v-model="tag" :disabled="searching || busy" aria-label="按分类标签检索"><option value="">全部标签</option><option v-for="item in knownTags" :key="item" :value="item">{{ item }}</option></select><button class="primary-button" type="submit" :disabled="searching || busy || !query.trim()"><AppIcon name="search" />{{ searching ? '检索中…' : '检索证据' }}</button></div><p v-if="searchError" id="kb-search-error" class="form-error kb-search-error" role="alert">{{ searchError }}</p></form>
-          <p id="kb-search-note" class="kb-search-note"><AppIcon name="info" />检索用于寻找证据；命中和排序分数均不代表说法正确。</p>
-        </section>
-        <section class="kb-guide"><h3><AppIcon name="sparkles" />让资料更容易被找到</h3><ul><li><AppIcon name="check" />优先保留主体、时间、单位与条件</li><li><AppIcon name="check" />补充发布方与原始出处，方便复核</li><li><AppIcon name="check" />用标签整理同一主题的资料</li></ul></section>
-      </aside>
+      <section id="kb-source-view" ref="sourcePanel" class="kb-card kb-source" :class="{ 'has-source': sourceLoading || selected || sourceError }" tabindex="-1" aria-labelledby="kb-source-title" :aria-busy="sourceLoading">
+        <div class="kb-reader-bar"><h2 id="kb-source-title"><AppIcon name="file" />原文阅读</h2><button v-if="sourceLoading || selected || sourceError" type="button" class="kb-reader-close" aria-label="关闭原文" @click="closeSource"><AppIcon name="close" /></button><span v-else>选择资料后在此查看</span></div>
+        <div v-if="sourceLoading" class="kb-reader-empty" role="status"><AppIcon name="refresh" class="kb-spinning" /><h3>正在读取原文…</h3><p>稍候即可查看资料正文。</p></div>
+        <div v-else-if="sourceError" class="kb-reader-empty"><AppIcon name="info" /><h3>暂时无法读取原文</h3><p role="alert">{{ sourceError }}</p><button v-if="activeDocumentId" type="button" class="secondary-button" @click="viewDocument(activeDocumentId, sourceHit ?? undefined)"><AppIcon name="refresh" />重新读取</button></div>
+        <template v-else-if="selected">
+          <div class="kb-source-heading"><span class="kb-source-format">{{ documentFormat(selected.document) }}</span><h3 :title="selected.document.title">{{ selected.document.title }}</h3><p><span class="kb-source-publisher" :title="selected.document.publisher ?? undefined">{{ selected.document.publisher || '发布方未填写' }}</span><span class="kb-source-count">· {{ selected.document.char_count.toLocaleString() }} 字符</span></p></div>
+          <div class="kb-reader-tools">
+            <details :key="selected.document.document_id" class="kb-provenance"><summary>来源信息<AppIcon name="chevron" /></summary><div><p>资料标题：{{ selected.document.title }}</p><p>发布方：{{ selected.document.publisher || '未填写' }}</p><p v-if="selected.document.tags.length">分类标签：{{ selected.document.tags.join('、') }}</p><p>发布日期：{{ formatDate(selected.document.published_at) }}</p><p>导入时间：{{ formatDate(selected.document.created_at) }}</p><a v-if="safeExternalUrl(selected.document.source_url)" :href="safeExternalUrl(selected.document.source_url) ?? undefined" target="_blank" rel="noopener noreferrer">打开原始出处 ↗</a><p class="kb-hash">SHA-256：{{ selected.document.content_hash }}</p></div></details>
+            <span v-if="highlight" class="kb-highlight-label"><i aria-hidden="true"></i>已定位证据片段</span>
+            <div v-if="selected.pages.length > 1" class="kb-page-picker"><button type="button" aria-label="上一页原文" :disabled="page <= 1" @click="changePage(page - 1)"><AppIcon name="chevron" class="kb-prev" /></button><label class="sr-only" for="kb-source-page">原文页码</label><select id="kb-source-page" :value="page" @change="changePage(Number(($event.target as HTMLSelectElement).value))"><option v-for="(_, index) in selected.pages" :key="index" :value="index + 1">第 {{ index + 1 }} / {{ selected.pages.length }} 页</option></select><button type="button" aria-label="下一页原文" :disabled="page >= selected.pages.length" @click="changePage(page + 1)"><AppIcon name="chevron" /></button></div>
+            <span v-else class="kb-single-page">第 1 / 1 页</span>
+          </div>
+          <div ref="sourceContent" class="kb-source-content" tabindex="0" role="region" aria-label="可滚动的资料正文"><pre class="kb-original"><template v-if="highlight">{{ currentCharacters.slice(0, highlight.start).join('') }}<mark ref="sourceHighlight">{{ currentCharacters.slice(highlight.start, highlight.end).join('') }}</mark>{{ currentCharacters.slice(highlight.end).join('') }}</template><template v-else>{{ currentText || '这一页没有提取到文字。' }}</template></pre></div>
+          <div class="kb-reader-footer"><AppIcon name="info" />正文为提取文字，版式以原始文件为准。</div>
+        </template>
+        <div v-else class="kb-reader-empty"><span class="kb-reader-illustration" aria-hidden="true"><AppIcon name="file" /><span><AppIcon name="check" /></span></span><p class="eyebrow">READ WITH CONTEXT</p><h3>让每一条证据，都有出处</h3><p>选择左侧资料，查看完整正文；<br />点击检索片段，直接定位对应内容。</p><span class="kb-reader-tip"><AppIcon name="layers" />资料、证据、原文，在同一处对照</span></div>
+      </section>
     </div>
 
-    <section v-if="sourceLoading || selected" ref="sourcePanel" class="kb-card kb-source" aria-label="资料原文">
-      <p v-if="sourceLoading" role="status">正在读取原文…</p>
-      <template v-else-if="selected"><div class="kb-source-heading"><div><p class="eyebrow">ORIGINAL SOURCE</p><h2>{{ selected.document.title }}</h2></div><button type="button" class="secondary-button" @click="selected = null; documentRequest += 1"><AppIcon name="close" />收起原文</button></div><p class="kb-help">{{ selected.document.publisher || '发布方未填写' }} · 发布 {{ formatDate(selected.document.published_at) }} · 导入 {{ formatDate(selected.document.created_at) }} <a v-if="safeExternalUrl(selected.document.source_url)" :href="safeExternalUrl(selected.document.source_url) ?? undefined" target="_blank" rel="noopener noreferrer">打开原始出处 ↗</a></p><details class="kb-provenance"><summary>资料版本与复核信息</summary><p class="kb-hash">SHA-256：{{ selected.document.content_hash }}</p></details><label v-if="selected.pages.length > 1" class="kb-page-picker">页码 <select v-model="page" @change="selection = null"><option v-for="(_, index) in selected.pages" :key="index" :value="index + 1">第 {{ index + 1 }} 页</option></select></label><pre v-if="highlight" class="kb-original">{{ currentCharacters.slice(0, highlight.start).join('') }}<mark>{{ currentCharacters.slice(highlight.start, highlight.end).join('') }}</mark>{{ currentCharacters.slice(highlight.end).join('') }}</pre><pre v-else class="kb-original">{{ currentText || '这一页没有提取到文字。' }}</pre></template>
-    </section>
-    <footer class="kb-footnote"><AppIcon name="info" /><p>新导入或删除资料只影响后续核验，已有报告保留当时的证据片段与资料版本。使用新资料时，请新建任务或重新检索声明。</p></footer>
+    <footer class="kb-footnote"><AppIcon name="info" /><p>资料变更仅影响后续核验，已有报告会保留当时的证据与资料版本。</p></footer>
 
     <dialog ref="importDialog" class="kb-import-dialog" aria-labelledby="kb-import-title" aria-describedby="kb-import-description" @cancel="cancelImport" @close="dragging = false">
       <div class="kb-modal-heading"><div><p class="eyebrow">ADD TO YOUR LIBRARY</p><h2 id="kb-import-title">添加参考资料</h2><p id="kb-import-description">保存一份资料，为之后的核验补充依据。</p></div><button type="button" class="kb-dialog-close" :disabled="busy" aria-label="关闭添加资料面板" @click="closeImport"><AppIcon name="close" /></button></div>
@@ -336,172 +437,10 @@ onMounted(async () => { await refresh(); if (!disposed && props.initialDocument)
   </section>
 </template>
 
+<style scoped src="./knowledge-page.css"></style>
+
 <style scoped>
-.knowledge-page { color: #294235; }
-.knowledge-page h1 { display: flex; align-items: center; gap: 13px; margin: 0 0 11px; font-size: clamp(29px, 3.4vw, 38px); font-weight: 700; line-height: 1.3; }
-.knowledge-page h2 { margin: 0; color: #294b36; font-size: 18px; font-weight: 600; }
-.knowledge-page h3 { color: #34513c; font-weight: 600; overflow-wrap: anywhere; }
-.knowledge-page button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; }
-.knowledge-page button .app-icon { width: 16px; height: 16px; }
-.kb-page-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 27px; }
-.kb-page-heading .eyebrow { margin-bottom: 10px; font-size: 9px; }
-.kb-title-dot { width: 7px; height: 7px; border-radius: 50%; background: #9abf89; }
-.kb-page-description { margin: 0; color: #6e7f71; font-size: 13px; line-height: 1.8; }
-.kb-heading-actions { display: flex; flex-wrap: wrap; gap: 10px; }
-.kb-heading-actions .primary-button { min-height: 40px; padding: 10px 17px; }
-.kb-back-arrow { transform: rotate(180deg); }
-.kb-overview { display: grid; grid-template-columns: 1fr 1fr 1.2fr; gap: 16px; }
-.kb-stat-card { min-width: 0; padding: 20px 22px 17px; border: 1px solid #e1e8df; border-radius: 13px; background: #fff; }
-.kb-stat-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: #6a7d6c; font-size: 12px; }
-.kb-stat-icon { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; background: #f0f5ed; color: #77956a; }
-.kb-stat-icon .app-icon { display: block; width: 17px; height: 17px; }
-.kb-stat-card strong { display: flex; align-items: baseline; gap: 9px; margin-top: 3px; color: #294d36; font-size: 30px; font-weight: 600; letter-spacing: -.04em; line-height: 1.5; }
-.kb-stat-card strong small { color: #7b8b7b; font-size: 11px; font-weight: 400; letter-spacing: 0; }
-.kb-stat-card p { margin: 4px 0 0; color: #6b7d65; font-size: 12px; line-height: 1.7; }
-.kb-engine-card { background: #eff5eb; border-color: #dce8d5; }
-.kb-engine-card .kb-stat-icon { background: #ffffff9c; }
-.kb-stat-card .kb-mode { align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 12px; font-size: 22px; line-height: 1.3; letter-spacing: -.02em; }
-.kb-ready-badge { display: inline-flex; align-items: center; gap: 5px; padding: 4px 7px; border: 1px solid #d7e5d0; border-radius: 20px; background: #f8fbf5; color: #66815c; font-size: 9px; font-weight: 500; white-space: nowrap; }
-.kb-ready-badge i { width: 4px; height: 4px; border-radius: 50%; background: #71995e; }
-.kb-engine-note { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 6px; margin: 12px 2px 25px; color: #6b7d65; font-size: 11px; line-height: 1.8; }
-.kb-engine-note > .app-icon { width: 13px; height: 13px; margin-top: 2px; }
-.kb-engine-note .text-button { margin: 0 0 0 auto; padding: 0; font-size: 10px; }
-.kb-engine-note .text-button .app-icon { width: 12px; height: 12px; }
-.kb-workspace { display: grid; grid-template-columns: minmax(0, 1fr) 320px; align-items: start; gap: 22px; margin-top: 25px; }
-.kb-engine-note + .kb-workspace { margin-top: 0; }
-.kb-card { min-width: 0; border: 1px solid #e1e8df; border-radius: 15px; background: #fff; box-shadow: 0 3px 14px #24462b03; }
-.kb-library { overflow: hidden; }
-.kb-library-heading { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 23px 24px 20px; }
-.kb-library-heading p { margin: 7px 0 0; color: #6b7d65; font-size: 12px; line-height: 1.7; }
-.kb-refresh-button { padding: 7px 9px; border: 1px solid #e6ece3; border-radius: 7px; background: #fafcf8; color: #698065; font-size: 11px; white-space: nowrap; }
-.kb-refresh-button:hover:not(:disabled) { background: #f0f6e9; border-color: #c8d9be; }
-.kb-view-tabs { display: flex; gap: 25px; padding: 0 24px; border-bottom: 1px solid #e9eee6; }
-.kb-view-tabs button { position: relative; gap: 7px; min-height: 46px; padding: 0 0 12px; border: 0; background: transparent; color: #6b7d65; font-size: 13px; }
-.kb-view-tabs button.active { color: #426c40; font-weight: 600; }
-.kb-view-tabs button.active::after { position: absolute; right: 0; bottom: -1px; left: 0; height: 2px; border-radius: 4px; background: #668a51; content: ''; }
-.kb-view-tabs button span { padding: 2px 6px; border-radius: 5px; background: #f0f4ec; color: #6e8466; font-size: 10px; }
-.kb-list-filters { display: flex; gap: 10px; padding: 19px 24px 0; }
-.kb-filter-input { display: flex; align-items: center; flex: 1; min-width: 0; height: 37px; padding: 0 11px; border: 1px solid #e3e9df; border-radius: 8px; background: #fafcf8; color: #8d9d86; }
-.kb-filter-input > .app-icon { width: 14px; height: 14px; }
-.kb-filter-input:focus-within { border-color: #8fac7f; box-shadow: 0 0 0 3px #88a46c14; }
-.kb-filter-input input { width: 100%; min-width: 0; padding: 8px; border: 0; outline: 0; background: transparent; color: #435d40; font: inherit; font-size: 12px; }
-.kb-filter-input input:disabled { opacity: .75; }
-.kb-filter-input input::placeholder { color: #8b9786; }
-.kb-filter-input button { padding: 0; border: 0; background: transparent; color: #7c8f72; }
-.kb-filter-input button .app-icon { width: 13px; height: 13px; }
-.knowledge-page select { max-width: 100%; padding: 8px 10px; border: 1px solid #e1e8dc; border-radius: 8px; background: #fafcf7; color: #698062; font: inherit; font-size: 11px; }
-.knowledge-page select:disabled { color: #8a9784; opacity: .8; }
-.kb-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 43px 22px 33px; text-align: center; }
-.kb-empty-art { position: relative; width: 112px; height: 83px; margin-bottom: 20px; }
-.kb-art-page { position: absolute; top: 6px; left: 37px; display: grid; place-items: center; width: 52px; height: 63px; border: 1px solid #d5e3c9; border-radius: 10px; background: #f7faf2; color: #94af78; transform: rotate(10deg); box-shadow: 0 5px 10px #657e4210; }
-.kb-art-page .app-icon { width: 29px; height: 29px; }
-.kb-art-back { top: 7px; left: 21px; background: #edf4e5; color: #aac08e; transform: rotate(-12deg); box-shadow: none; }
-.kb-art-seal { position: absolute; right: 13px; bottom: 2px; display: grid; place-items: center; width: 28px; height: 28px; border: 3px solid #fff; border-radius: 50%; background: #7f9d5c; color: #fff; }
-.kb-art-seal .app-icon { width: 15px; height: 15px; }
-.kb-empty h3 { margin: 0 0 10px; font-size: 18px; letter-spacing: -.015em; }
-.kb-empty > p { margin: 0; color: #6b7d65; font-size: 13px; line-height: 1.9; }
-.kb-empty-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 22px; }
-.kb-empty-actions button { min-height: 38px; padding: 9px 16px; font-size: 12px; }
-.kb-empty-actions .secondary-button { background: #fff; color: #66815c; }
-.kb-formats { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 7px; margin-top: 17px; }
-.kb-formats span { padding: 3px 6px; border: 1px solid #e5ecdf; border-radius: 4px; background: #f8faf5; color: #8d9b81; font: 9px 'Segoe UI', sans-serif; }
-.kb-formats small { margin-left: 4px; color: #8b987e; font-size: 9px; }
-.kb-list-footer { display: flex; align-items: flex-start; gap: 7px; padding: 14px 24px; border-top: 1px solid #edf1e8; background: #fafcf7; color: #6b7d65; font-size: 11px; line-height: 1.8; }
-.kb-list-footer > .app-icon { width: 13px; height: 13px; margin-top: 2px; }
-.kb-visible-count { flex-shrink: 0; margin-left: auto; color: #718866; }
-.kb-document-list { margin: 0; padding: 9px 24px 14px; list-style: none; }
-.kb-document { display: grid; grid-template-columns: 40px minmax(0, 1fr) 58px auto; align-items: center; gap: 14px; padding: 20px 0; border-bottom: 1px solid #edf1e9; }
-.kb-document:last-child { border-bottom: 0; }
-.kb-document-icon { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; width: 40px; height: 48px; border: 1px solid #e2ead9; border-radius: 8px; background: #f4f8ed; color: #91aa73; }
-.kb-document-icon .app-icon { width: 20px; height: 20px; }
-.kb-document-icon small { max-width: 36px; overflow: hidden; text-overflow: ellipsis; font-size: 8px; letter-spacing: .03em; white-space: nowrap; }
-.kb-document-info { min-width: 0; }
-.kb-document-info h3 { overflow: hidden; margin: 0 0 6px; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
-.kb-document-info p { display: flex; flex-wrap: wrap; gap: 5px; margin: 0; color: #6b7d65; font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
-.kb-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin-top: 8px; }
-.kb-tags > span { padding: 3px 6px; border-radius: 4px; background: #eef4e7; color: #637b4e; font-size: 10px; }
-.kb-tags small { color: #75856d; font-size: 10px; }
-.kb-document-count { text-align: center; }
-.kb-document-count strong, .kb-document-count small { display: block; }
-.kb-document-count strong { color: #648151; font-size: 17px; font-weight: 500; }
-.kb-document-count small { margin-top: 5px; color: #75856d; font-size: 10px; }
-.kb-document-actions { display: flex; align-items: center; gap: 7px; }
-.kb-view-document { padding: 6px 0 6px 5px; border: 0; background: transparent; color: #5b7847; font-size: 11px; white-space: nowrap; }
-.kb-view-document:hover { color: #355a2c; text-decoration: underline; text-underline-offset: 3px; }
-.kb-document-actions button .app-icon { width: 13px; height: 13px; }
-.kb-delete { width: 36px; height: 36px; padding: 0; border: 1px solid transparent; border-radius: 7px; background: transparent; color: #7d8c70; }
-.kb-delete:hover:not(:disabled) { border-color: #efdbd1; background: #fff6f0; color: #a85d49; }
-.kb-search-sidebar { display: grid; gap: 18px; }
-.kb-search-card { padding: 23px; }
-.kb-search-symbol { display: grid; place-items: center; width: 37px; height: 37px; margin-bottom: 17px; border: 1px solid #e0e8d7; border-radius: 10px; background: #f0f5e9; color: #8ca571; }
-.kb-search-symbol .app-icon { width: 19px; height: 19px; }
-.kb-search-card .eyebrow { margin: 0 0 7px; color: #8b9a7d; font-size: 8px; letter-spacing: .13em; }
-.kb-search-description { margin: 9px 0 0; color: #6b7d65; font-size: 12px; line-height: 1.8; }
-#kb-query { min-height: 128px; margin: 20px 0 0; padding: 13px 14px; border-color: #e1e9d9; border-radius: 9px; background: #fafcf7; color: #546c42; font-size: 13px; line-height: 1.85; }
-#kb-query::placeholder { color: #95a087; opacity: 1; }
-#kb-query:focus { border-color: #91aa7c; box-shadow: 0 0 0 3px #8aa46c15; }
-.kb-search-actions { display: flex; gap: 9px; margin-top: 11px; }
-.kb-search-actions select { flex: 1; min-width: 0; }
-.kb-search-actions .primary-button { min-height: 37px; padding: 8px 12px; font-size: 12px; gap: 6px; }
-.kb-search-actions .primary-button .app-icon { width: 13px; height: 13px; }
-.kb-search-shortcut { margin: 7px 0 0; color: #78886e; font-size: 10px; text-align: right; }
-.kb-search-error { margin: 14px 0 0; }
-.kb-query-summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 7px; margin: 0; padding: 18px 24px 0; color: #708165; font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; }
-.kb-query-summary strong { color: #4f6e3d; font-weight: 600; }
-.kb-query-summary > span { padding: 2px 7px; border-radius: 5px; background: #eff5e8; color: #6c8456; font-size: 10px; }
-.kb-results-view { scroll-margin-top: 20px; }
-.kb-results-view:focus-visible { outline: 2px solid #a1b98c; outline-offset: -2px; }
-.kb-search-note { display: flex; align-items: flex-start; gap: 6px; margin: 17px 0 0; padding-top: 13px; border-top: 1px solid #edf1e6; color: #6b7d65; font-size: 11px; line-height: 1.8; }
-.kb-search-note .app-icon { width: 13px; height: 13px; margin-top: 2px; }
-.kb-guide { padding: 21px 23px; border: 1px solid #e1e9d9; border-radius: 13px; background: #f0f5eb; }
-.kb-guide h3 { display: flex; align-items: center; gap: 7px; margin: 0 0 14px; color: #587348; font-size: 13px; }
-.kb-guide h3 .app-icon { width: 14px; height: 14px; }
-.kb-guide ul { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
-.kb-guide li { display: flex; align-items: flex-start; gap: 6px; color: #6b7d65; font-size: 11px; line-height: 1.7; }
-.kb-guide li .app-icon { width: 12px; height: 12px; margin-top: 2px; color: #8eaa74; }
-.kb-help { margin: 9px 0; color: #6b7d65; font-size: 12px; line-height: 1.8; }
-.kb-results-caption { margin: 0; padding: 18px 24px 2px; color: #8a987d; font-size: 11px; line-height: 1.8; }
-.kb-hit { margin: 0 24px; padding: 22px 0; border-bottom: 1px solid #edf1e5; }
-.kb-hit:last-child { border: 0; }
-.kb-hit-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
-.kb-hit-heading h3 { flex: 1; min-width: 100px; margin: 0; font-size: 14px; line-height: 1.8; }
-.kb-hit-number { color: #9baa87; font: 11px Consolas, monospace; }
-.kb-match-badge { padding: 4px 8px; border-radius: 20px; background: #eff5e8; color: #85996e; font-size: 9px; }
-.kb-hit blockquote { margin: 12px 0; padding: 14px 16px; border-left: 2px solid #b7cd9b; border-radius: 0 8px 8px 0; background: #f7faf2; color: #526b42; font-size: 13px; line-height: 1.9; overflow-wrap: anywhere; white-space: pre-wrap; }
-.kb-result-link { padding: 3px 0; border: 0; background: transparent; color: #759357; font-size: 11px; }
-.kb-result-link:hover { color: #3b642f; text-decoration: underline; text-underline-offset: 4px; }
-.kb-result-link .app-icon { width: 13px; height: 13px; }
-.kb-filter-empty { padding: 65px 24px; text-align: center; }
-.kb-filter-empty > .app-icon { width: 32px; height: 32px; margin-bottom: 16px; color: #a6bb8f; }
-.kb-filter-empty h3 { margin: 0 0 10px; font-size: 17px; }
-.kb-filter-empty p { margin: 0 0 20px; color: #6b7d65; font-size: 13px; line-height: 1.9; }
-.kb-empty-search-icon { display: grid; place-items: center; width: 58px; height: 58px; margin: 0 auto 20px; border: 1px solid #e4ecd9; border-radius: 17px; background: #f4f8ed; color: #a1b786; }
-.kb-empty-search-icon .app-icon { width: 26px; height: 26px; }
-.kb-list-loading { padding: 24px; color: #8c9b7f; font-size: 12px; }
-.kb-skeleton-row { display: flex; align-items: center; gap: 16px; margin-top: 25px; }
-.kb-skeleton-row > i { width: 40px; height: 48px; border-radius: 8px; background: #f0f4e9; }
-.kb-skeleton-row > div { display: grid; flex: 1; gap: 11px; }
-.kb-skeleton-row span { width: 60%; height: 10px; border-radius: 5px; background: #f1f5ec; }
-.kb-skeleton-row span + span { width: 40%; height: 7px; }
-.kb-source { margin-top: 24px; padding: 25px; scroll-margin-top: 24px; }
-.kb-source-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-bottom: 15px; }
-.kb-source-heading > div { min-width: 0; }
-.kb-source-heading h2 { overflow-wrap: anywhere; line-height: 1.6; }
-.kb-source-heading .eyebrow { margin-bottom: 7px; }
-.kb-source-heading button { flex-shrink: 0; }
-.kb-source .kb-help a { color: #729153; text-underline-offset: 3px; }
-.kb-provenance { margin: 14px 0; padding: 10px 13px; border: 1px solid #e6eddd; border-radius: 8px; background: #fafcf6; color: #8c9b77; font-size: 11px; }
-.kb-provenance summary { cursor: pointer; }
-.kb-hash { margin: 12px 0 2px; overflow-wrap: anywhere; font: 10px Consolas, monospace; line-height: 1.7; }
-.kb-page-picker { color: #78935c; font-size: 12px; }
-.kb-page-picker select { margin-left: 10px; }
-.kb-original { max-height: 560px; overflow: auto; margin-bottom: 0; padding: 22px; border: 1px solid #e8eedd; border-radius: 10px; background: #f8faf3; color: #60774c; font: inherit; font-size: 13px; line-height: 2.1; white-space: pre-wrap; overflow-wrap: anywhere; }
-.kb-original mark { padding-block: 2px; background: #e3edbb; color: #435d2e; }
-.kb-notice { display: flex; align-items: flex-start; gap: 7px; padding: 12px 16px; border: 1px solid #d7e8ca; border-radius: 9px; background: #f1f8ea; color: #64824c; font-size: 12px; line-height: 1.8; }
-.kb-notice .app-icon { width: 15px; height: 15px; margin-top: 3px; }
-.kb-footnote { display: flex; align-items: flex-start; gap: 7px; margin-top: 21px; padding-inline: 2px; color: #6b7d65; font-size: 11px; line-height: 1.9; }
-.kb-footnote .app-icon { width: 13px; height: 13px; margin-top: 3px; }
-.kb-footnote p { margin: 0; }
+.kb-help { margin: 9px 0; color: #627366; font-size: 12px; line-height: 1.8; }
 .kb-import-dialog { width: min(580px, calc(100% - 36px)); max-height: calc(100dvh - 48px); overflow: auto; overscroll-behavior: contain; padding: 26px; border: 1px solid #dfe8d6; border-radius: 18px; background: #fff; color: #354f37; box-shadow: 0 24px 90px #142d2630; }
 .kb-import-dialog::backdrop { background: #183c2c55; backdrop-filter: blur(4px); }
 .kb-modal-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 15px; margin-bottom: 23px; }
@@ -556,7 +495,7 @@ onMounted(async () => { await refresh(); if (!disposed && props.initialDocument)
 .kb-file-card.is-saving .kb-file-state-icon { background: #567a91; }
 .kb-file-picker.is-dragging :is(.kb-file-card, .kb-upload) { border-color: #739c77; background: #f0f7e6; box-shadow: 0 0 0 3px #739c771a; }
 .kb-file-picker:has(> input:focus-visible) > :is(.kb-upload, .kb-file-card) { outline: 2px solid #80a081; outline-offset: 3px; }
-.kb-document-icon { padding: 0; border: 0; background: transparent; }
+
 .kb-optional-fields { margin-top: 20px; padding: 15px 0; border-top: 1px solid #e9efdf; border-bottom: 1px solid #e9efdf; }
 .kb-optional-fields summary { display: flex; align-items: center; gap: 9px; list-style: none; color: #5b7847; font-size: 13px; cursor: pointer; }
 .kb-optional-fields summary::-webkit-details-marker { display: none; }
@@ -570,93 +509,7 @@ onMounted(async () => { await refresh(); if (!disposed && props.initialDocument)
 .kb-modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 21px; }
 .kb-modal-actions .primary-button { min-height: 39px; padding: 10px 16px; font-size: 12px; }
 .kb-modal-actions .secondary-button { min-width: 70px; }
-.kb-spinning { animation: kb-spin 1.2s linear infinite; }
-@keyframes kb-spin { to { transform: rotate(360deg); } }
-@media (max-width: 1000px) {
-  .kb-workspace { grid-template-columns: minmax(0, 1fr) 290px; gap: 18px; }
-  .kb-search-card { padding: 20px; }
-  .kb-library-heading, .kb-list-filters { padding-inline: 20px; }
-  .kb-view-tabs { padding-inline: 20px; }
-  .kb-document-list { padding-inline: 20px; }
-  .kb-document { grid-template-columns: 36px minmax(0, 1fr) auto; gap: 11px; }
-  .kb-document-count { display: none; }
-  .kb-stat-card { padding: 18px; }
-  .kb-stat-card .kb-mode { font-size: 20px; }
-}
-@media (max-width: 800px) {
-  .kb-workspace { grid-template-columns: minmax(0, 1fr); gap: 20px; }
-  .kb-search-sidebar { grid-template-columns: minmax(0, 1fr) minmax(0, .85fr); align-items: start; }
-  .kb-search-symbol { display: none; }
-  .kb-overview { gap: 12px; }
-  .kb-stat-card { padding: 16px; }
-  .kb-stat-card .kb-mode { font-size: 18px; margin-top: 14px; }
-  .kb-ready-badge { display: none; }
-  .kb-heading-actions .secondary-button { display: none; }
-  .kb-document { grid-template-columns: 40px minmax(0, 1fr) 58px auto; }
-  .kb-document-count { display: block; }
-}
 @media (max-width: 560px) {
-  .kb-page-heading { align-items: flex-start; flex-direction: column; gap: 17px; margin-bottom: 22px; }
-  .kb-page-heading h1 { font-size: 30px; margin-bottom: 9px; }
-  .kb-page-description { font-size: 12px; }
-  .kb-heading-actions { width: 100%; }
-  .kb-heading-actions .primary-button { flex: 1; }
-  .kb-heading-actions .secondary-button { display: inline-flex; }
-  .kb-overview { grid-template-columns: 1fr 1fr; gap: 10px; }
-  .kb-stat-card { padding: 14px 16px; border-radius: 11px; }
-  .kb-stat-top { font-size: 11px; }
-  .kb-stat-icon { width: 25px; height: 25px; }
-  .kb-stat-icon .app-icon { width: 14px; height: 14px; }
-  .kb-stat-card strong { font-size: 26px; margin-top: 6px; }
-  .kb-stat-card p { font-size: 10px; }
-  .kb-engine-card { grid-column: span 2; }
-  .kb-engine-card .kb-stat-top { float: left; display: block; }
-  .kb-engine-card .kb-stat-icon { display: none; }
-  .kb-stat-card .kb-mode { justify-content: flex-end; margin: 0; font-size: 18px; }
-  .kb-engine-card p { clear: both; margin-top: 9px; }
-  .kb-ready-badge { display: inline-flex; }
-  .kb-engine-note { margin-bottom: 21px; font-size: 10px; }
-  .kb-engine-note .text-button { margin-left: 19px; }
-  .kb-library-heading { padding: 20px 18px 16px; gap: 10px; }
-  .kb-library-heading h2 { font-size: 17px; }
-  .kb-library-heading p { font-size: 11px; }
-  .kb-view-tabs { padding-inline: 18px; gap: 22px; }
-  .kb-view-tabs button { font-size: 12px; }
-  .kb-list-filters { padding: 16px 18px 0; gap: 7px; }
-  .kb-filter-input { padding-inline: 8px; }
-  .kb-filter-input input { padding-inline: 6px; font-size: 11px; }
-  .kb-list-filters select { max-width: 100px; padding: 8px 6px; font-size: 10px; }
-  .kb-empty { padding: 35px 18px 26px; }
-  .kb-empty h3 { font-size: 16px; }
-  .kb-empty > p { font-size: 12px; }
-  .kb-empty-art { margin-bottom: 15px; }
-  .kb-empty-actions { gap: 8px; }
-  .kb-empty-actions button { padding: 9px 12px; font-size: 11px; }
-  .kb-formats { gap: 5px; }
-  .kb-formats small { width: 100%; margin: 3px 0 0; }
-  .kb-list-footer { padding: 13px 18px; font-size: 10px; }
-  .kb-visible-count { display: none; }
-  .kb-document-list { padding: 6px 18px; }
-  .kb-document { grid-template-columns: 36px minmax(0, 1fr); gap: 10px; padding: 18px 0; }
-  .kb-document-icon { width: 36px; }
-  .kb-document-info h3 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; font-size: 13px; line-height: 1.7; white-space: normal; }
-  .kb-document-info p { font-size: 11px; }
-  .kb-document-count { display: none; }
-  .kb-document-actions { grid-column: 2; justify-content: flex-start; gap: 15px; margin-top: -2px; }
-  .kb-view-document { padding-left: 0; }
-  .kb-search-sidebar { grid-template-columns: 1fr; gap: 16px; }
-  .kb-search-card { padding: 22px; }
-  .kb-guide { padding: 20px 22px; }
-  .kb-filter-empty { padding: 50px 20px; }
-  .kb-hit { margin-inline: 18px; padding-block: 18px; }
-  .kb-hit-heading { align-items: flex-start; }
-  .kb-match-badge { margin-left: 24px; }
-  .kb-results-caption { padding-inline: 18px; font-size: 10px; }
-  .kb-query-summary { padding-inline: 18px; font-size: 11px; }
-  .kb-source { padding: 20px 18px; }
-  .kb-source-heading { flex-direction: column; gap: 14px; }
-  .kb-source-heading h2 { font-size: 17px; }
-  .kb-original { padding: 15px; font-size: 12px; }
   .kb-import-dialog { width: calc(100% - 24px); max-height: calc(100dvh - 24px); padding: 22px 19px; border-radius: 14px; }
   .kb-modal-heading h2 { font-size: 20px; }
   .kb-modal-heading p:last-child { font-size: 12px; }
@@ -676,13 +529,9 @@ onMounted(async () => { await refresh(); if (!disposed && props.initialDocument)
   .kb-optional-fields summary > span { font-size: 9px; }
   .kb-fields { grid-template-columns: 1fr; gap: 0; }
   .kb-modal-actions button { flex: 1; }
-  .kb-footnote { font-size: 10px; }
 }
-@media (prefers-reduced-motion: reduce) { .kb-spinning { animation: none; } }
 @media (pointer: coarse) {
-  .kb-delete, .kb-dialog-close { width: 44px; height: 44px; }
-  .kb-filter-input { height: 44px; }
-  .kb-filter-input button { min-width: 32px; min-height: 32px; }
+  .kb-dialog-close { width: 44px; height: 44px; }
 }
 @media print { .kb-import-dialog { display: none !important; } }
 </style>

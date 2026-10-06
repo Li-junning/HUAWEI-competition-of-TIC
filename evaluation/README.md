@@ -85,4 +85,6 @@ gold 标签须为 `credible`、`disputed`、`incorrect`、`evidence_insufficient
 
 `public_fact_seed.json` 提供由公开官方页面支持的事实例句，用来演练标注格式；它不是 AI 回答样本，也没有声称经过独立人工复核。
 
+可使用 `python evaluation/live_accuracy_smoke.py --live`，通过项目已有 Tavily/MiMo 配置核验四条公开事实，结果保存到 `evaluation/results/live-accuracy-smoke.json`。脚本仅使用单独构造的声明，不读写用户任务数据库。最多 12 次搜索、4 次判断（供应商恢复重试另计），会消耗 API 额度。该检查覆盖大学成立年份和指定气压下的水沸点，只是开发冒烟检查，不计入真实 AI 回答盲测准确率。
+
 正式答辩请报告盲测样本来源、系统运行模式（是否联网及搜索来源）、类别分布、混淆矩阵分母、弃判率和证据不足误判为错误数。准确率只描述该批人工标注样本，不能外推为所有用户查询的总体准确率。

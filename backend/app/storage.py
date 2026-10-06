@@ -10,6 +10,7 @@ from typing import Any, Iterable
 
 from .reference_resolution import has_unresolved_reference
 from .schemas import Claim, ClaimState, TaskStatus, TaskSummary, new_id, now_utc
+from .scoring import support_score
 
 
 class Storage:
@@ -87,9 +88,12 @@ class Storage:
             self.conn.commit()
 
     def save_claim(self, claim: Claim) -> None:
+        claim.support_score = support_score(claim)
         with self._lock:
             self.conn.execute(
-                "INSERT OR REPLACE INTO claims(claim_id,task_id,data,state,retry_count) VALUES(?,?,?,?,?)",
+                "INSERT INTO claims(claim_id,task_id,data,state,retry_count) VALUES(?,?,?,?,?) "
+                "ON CONFLICT(claim_id) DO UPDATE SET task_id=excluded.task_id,data=excluded.data,"
+                "state=excluded.state,retry_count=excluded.retry_count",
                 (claim.claim_id, claim.task_id, claim.model_dump_json(), claim.state.value, claim.retry_count),
             )
             self.conn.commit()
@@ -117,12 +121,18 @@ class Storage:
                     elif not (
                         claim.state.value == "failed"
                         or (claim.label and claim.label.value == "evidence_insufficient")
+                        or claim.retrieval_warnings
                         or (claim.manually_edited and claim.state.value == "unchecked")
+                        or (claim.state == ClaimState.UNCHECKED and (claim.unchecked_reason == "task_budget"
+                            or (claim.reason or "").startswith("任务总预算已耗尽")))
                     ):
                         result = (None, "RETRY_NOT_ALLOWED")
                     else:
                         claim.retry_count += 1
                         claim.state = ClaimState.RETRIEVING
+                        claim.label = None
+                        claim.support_score = None
+                        claim.unchecked_reason = None
                         self.conn.execute(
                             "UPDATE claims SET data = ?, state = ?, retry_count = ? WHERE claim_id = ?",
                             (claim.model_dump_json(), claim.state.value, claim.retry_count, claim_id),
@@ -141,7 +151,14 @@ class Storage:
     def get_claim(self, claim_id: str) -> Claim | None:
         with self._lock:
             row = self.conn.execute("SELECT data FROM claims WHERE claim_id = ?", (claim_id,)).fetchone()
-        return Claim.model_validate_json(row[0]) if row else None
+        return self._load_claim(row[0]) if row else None
+
+    @staticmethod
+    def _load_claim(data: str) -> Claim:
+        claim = Claim.model_validate_json(data)
+        # Also derive missing scores on older reports without rewriting them.
+        claim.support_score = support_score(claim)
+        return claim
 
     def edit_claim(self, claim_id: str, normalized_claim: str) -> tuple[Claim | None, str | None]:
         """Apply a user's wording correction without retaining a stale verdict."""
@@ -160,6 +177,7 @@ class Storage:
                     claim = Claim.model_validate_json(row["data"])
                     claim.normalized_claim = normalized_claim.strip()
                     claim.manually_edited = True
+                    claim.unchecked_reason = None
                     claim.label = None
                     claim.support_score = None
                     claim.reason = "声明已由用户修改，当前没有对应的新证据判断。"
@@ -211,7 +229,7 @@ class Storage:
             rows = self.conn.execute("SELECT data FROM claims WHERE task_id = ? ORDER BY rowid LIMIT ? OFFSET ?",
                                      (task_id, limit, offset)).fetchall()
             total = self.conn.execute("SELECT COUNT(*) FROM claims WHERE task_id = ?", (task_id,)).fetchone()[0]
-        return [Claim.model_validate_json(row[0]) for row in rows], int(total)
+        return [self._load_claim(row[0]) for row in rows], int(total)
 
     def review_change(self, task_id: str, action: str, reviewer: str, *,
                       claim_ids: list[str] | None = None, char_start: int | None = None,
@@ -252,6 +270,7 @@ class Storage:
                 def unchecked(claim: Claim, wording: str) -> None:
                     claim.normalized_claim = wording
                     claim.manually_edited = True
+                    claim.unchecked_reason = None
                     claim.label = None
                     claim.support_score = None
                     claim.reason = "人工调整了声明，尚无对应的新证据判断。"

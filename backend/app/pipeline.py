@@ -8,6 +8,7 @@ import inspect
 import logging
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from uuid import uuid4
 
@@ -83,9 +84,17 @@ class Pipeline:
         self.knowledge = KnowledgeBase(storage)
         self.retriever = retriever or KnowledgeBackedRetriever(
             self.knowledge,
-            SearchBackedRetriever(get_search_provider(), max_evidence=self.settings.max_evidence_per_claim),
+            SearchBackedRetriever(get_search_provider(), max_evidence=self.settings.max_evidence_per_claim,
+                                  max_queries=self.settings.max_queries_per_claim),
             max_evidence=self.settings.max_evidence_per_claim,
+            max_queries=self.settings.max_queries_per_claim,
         )
+        # Apply the application budget to built-in injected retrievers too.
+        # Custom provider protocols remain free to implement their own plans.
+        if isinstance(self.retriever, (SearchBackedRetriever, KnowledgeBackedRetriever)):
+            self.retriever.max_queries = min(self.retriever.max_queries, self.settings.max_queries_per_claim)
+            if isinstance(self.retriever, KnowledgeBackedRetriever) and isinstance(self.retriever.web_retriever, SearchBackedRetriever):
+                self.retriever.web_retriever.max_queries = min(self.retriever.web_retriever.max_queries, self.retriever.max_queries)
         self.evidence_judge = evidence_judge if evidence_judge is not None else get_evidence_judge()
         self.segmenter = segmenter if segmenter is not None else get_segmenter()
         self._external_slots = threading.BoundedSemaphore(self.settings.max_concurrency)
@@ -140,45 +149,12 @@ class Pipeline:
         for claim in claims:
             self.storage.save_claim(claim)
         failures: list[str] = []
-        for index, claim in enumerate(claims):
-            if time.monotonic() - started >= self.settings.task_timeout_seconds:
-                for pending in claims[index:]:
-                    pending.state = ClaimState.UNCHECKED
-                    pending.reason = "任务总预算已耗尽，该声明尚未执行检索判断。"
-                    self.storage.save_claim(pending)
-                failures.append("task_budget")
-                break
-            if claim.state == ClaimState.UNCHECKED:
-                self.storage.save_claim(claim)
-                continue
-            if claim.label is not None:
-                claim.state = ClaimState.DONE
-                claim.reason = "该内容不适用于事实核验。"
-                self.storage.save_claim(claim)
-                continue
-            claim.state = ClaimState.RETRIEVING
-            self.storage.save_claim(claim)
-            try:
-                with self._external_slots:
-                    clusters = _retrieve_with_deadline(self.retriever, claim, started + self.settings.task_timeout_seconds)
-                if claim.retrieval_warnings:
-                    failures.append(getattr(self.retriever, "provider", "retrieval"))
-            except Exception as exc:
-                claim.state = ClaimState.FAILED
-                claim.reason = _retrieval_failure_reason(exc, "检索服务暂时不可用，未将技术失败当作反证。")
-                claim.label = None
-                failures.append(getattr(self.retriever, "provider", "retrieval"))
-                self.storage.save_claim(claim)
-                continue
-            try:
-                claim.state = ClaimState.JUDGING
-                judge_claim(claim, clusters, self.evidence_judge, deadline=started + self.settings.task_timeout_seconds)
-            except Exception as exc:
-                claim.state = ClaimState.FAILED
-                claim.reason = _judgment_failure_reason(exc, claim)
-                claim.label = None
-                failures.append(getattr(self.evidence_judge, "provider", "judgment"))
-            self.storage.save_claim(claim)
+        deadline = started + self.settings.task_timeout_seconds
+        # Only the bounded worker set runs; waiting claims share the task's
+        # original deadline. Results are collected before the task is terminal.
+        with ThreadPoolExecutor(max_workers=max(1, self.settings.max_concurrency)) as workers:
+            for claim_failures in workers.map(lambda claim: self._process_claim(claim, deadline), claims):
+                failures.extend(claim_failures)
         all_claims, _ = self.storage.list_claims(task_id, 0, 1000)
         status = TaskStatus.FAILED if not all_claims and failures else (TaskStatus.PARTIAL if truncated or failures or any(c.state in {ClaimState.FAILED, ClaimState.UNCHECKED} for c in all_claims) else TaskStatus.SUCCEEDED)
         self.storage.set_task_status(task_id, status, truncated=truncated, claims_unchecked=limit_unchecked,
@@ -188,6 +164,61 @@ class Pipeline:
 
     async def run(self, task_id: str) -> TaskSummary:
         return await asyncio.to_thread(self.run_sync, task_id)
+
+    def _process_claim(self, claim, deadline: float) -> list[str]:
+        if claim.state == ClaimState.UNCHECKED:
+            return []
+        if claim.label is not None:
+            claim.state = ClaimState.DONE
+            claim.reason = "该内容不适用于事实核验。"
+            self.storage.save_claim(claim)
+            return []
+        remaining = max(0.0, deadline - time.monotonic())
+        # Reserve judgment time when using a model; include search-slot queue
+        # time in this budget rather than waiting indefinitely on a semaphore.
+        reserve = min(30.0, remaining * .4) if self.evidence_judge is not None else 0.0
+        retrieval_deadline = deadline - reserve
+        acquired = self._external_slots.acquire(timeout=max(0.0, retrieval_deadline - time.monotonic()))
+        if not acquired or time.monotonic() >= retrieval_deadline:
+            if acquired:
+                self._external_slots.release()
+            claim.state = ClaimState.UNCHECKED
+            claim.unchecked_reason = "task_budget"
+            claim.reason = "任务处理预算已耗尽，该声明尚未执行检索判断，可继续核验。"
+            self.storage.save_claim(claim)
+            return ["task_budget"]
+        claim.state = ClaimState.RETRIEVING
+        claim.unchecked_reason = None
+        failures = []
+        try:
+            self.storage.save_claim(claim)
+            clusters = _retrieve_with_deadline(self.retriever, claim, retrieval_deadline)
+            if claim.retrieval_warnings:
+                failures.append(getattr(self.retriever, "provider", "retrieval"))
+        except Exception as exc:
+            claim.state = ClaimState.FAILED
+            claim.reason = _retrieval_failure_reason(exc, "检索服务暂时不可用，未将技术失败当作反证。")
+            claim.label = None
+            failures.append(getattr(self.retriever, "provider", "retrieval"))
+            self.storage.save_claim(claim)
+            return failures
+        finally:
+            self._external_slots.release()
+        try:
+            claim.state = ClaimState.JUDGING
+            claim.evidence_clusters = clusters
+            claim.evidence_cluster_ids = [cluster.cluster_id for cluster in clusters]
+            self.storage.save_claim(claim)
+            if clusters and self.evidence_judge is not None and time.monotonic() >= deadline:
+                raise JudgmentProviderError("LLM_TIMEOUT")
+            judge_claim(claim, clusters, self.evidence_judge, deadline=deadline)
+        except Exception as exc:
+            claim.state = ClaimState.FAILED
+            claim.reason = _judgment_failure_reason(exc, claim)
+            claim.label = None
+            failures.append(getattr(self.evidence_judge, "provider", "judgment"))
+        self.storage.save_claim(claim)
+        return failures
 
     def retry_sync(self, claim_id: str) -> TaskSummary:
         try:
@@ -217,21 +248,9 @@ class Pipeline:
         claim.evidence_clusters = []
         claim.paper_check = None
         claim.retrieval_warnings = []
-        claim.state = ClaimState.RETRIEVING
-        self.storage.save_claim(claim)
-        try:
-            with self._external_slots:
-                clusters = _retrieve_with_deadline(self.retriever, claim, deadline)
-        except Exception as exc:
-            claim.state = ClaimState.FAILED
-            claim.reason = _retrieval_failure_reason(exc, "重试时检索服务失败，结果保持为未知。")
-        else:
-            try:
-                judge_claim(claim, clusters, self.evidence_judge, deadline=deadline)
-            except Exception as exc:
-                claim.state = ClaimState.FAILED
-                claim.reason = _judgment_failure_reason(exc, claim)
-        self.storage.save_claim(claim)
+        claim.state = ClaimState.PENDING
+        claim.unchecked_reason = None
+        self._process_claim(claim, deadline)
         record = self.storage.get_task(claim.task_id)
         row, claims = record
         has_failed_claim = any(c.state == ClaimState.FAILED or c.retrieval_warnings for c in claims)
